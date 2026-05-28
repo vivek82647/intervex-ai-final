@@ -1,10 +1,10 @@
-pydantic-core==2.23.4
+pydantic==2.10.6
+pydantic-core==2.27.2
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 python-socketio==5.11.3
 sqlalchemy==2.0.35
 aiosqlite==0.20.0
-pydantic==2.9.2
 pydantic-settings==2.5.2
 pydantic[email]
 python-jose[cryptography]==3.3.0
