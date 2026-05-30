@@ -26,7 +26,7 @@ export default function SessionResultsPage() {
 
   useEffect(() => {
     Promise.all([
-      adminApi.results({ session_id: sessionId }),
+      adminApi.results(sessionId),
       adminApi.dashboard(),
     ]).then(([rRes, aRes]) => {
       setData(rRes.data);
@@ -37,7 +37,7 @@ export default function SessionResultsPage() {
 
   const exportCsv = async () => {
     try {
-      const res = await adminApi.results({ session_id: sessionId });
+      const res = await adminApi.results(sessionId);
       const results = res.data?.results || [];
       const headers = ['Rank','Student','Roll No','Score','Max Score','Percentage','Time (min)','Warnings','Status'];
       const rows = results.map((r: any, i: number) => [

@@ -125,7 +125,8 @@ export const attemptApi = {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 export const adminApi = {
   dashboard: () => api.get('/admin/dashboard'),
-  results: (params?: any) => api.get('/admin/results', { params }),
+  results: (sessionId: string) =>
+  api.get(`/results/session/${sessionId}`),
 };
 
 // ─── Classes ──────────────────────────────────────────────────────────────────
