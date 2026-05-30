@@ -73,8 +73,15 @@ export const sessionApi = {
   get: (id: string) => api.get(`/sessions/${id}`),
   update: (id: string, data: any) => api.patch(`/sessions/${id}`, data),
   delete: (id: string) => api.delete(`/sessions/${id}`),
-  activate: (id: string) => api.post(`/sessions/${id}/activate`),
-  end: (id: string) => api.post(`/sessions/${id}/end`),
+ activate: (id: string) =>
+  api.patch(`/sessions/${id}/status`, {
+    status: 'active'
+  }),
+  
+end: (id: string) =>
+  api.patch(`/sessions/${id}/status`, {
+    status: 'ended'
+  }),
   getQuestions: (id: string) => api.get(`/sessions/${id}/questions`),
   addQuestions: (id: string, data: any) => api.post(`/sessions/${id}/questions`, data),
   getMonitor: (id: string) => api.get(`/sessions/${id}/monitor`),
