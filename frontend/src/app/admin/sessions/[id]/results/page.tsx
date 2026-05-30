@@ -9,7 +9,7 @@ import {
   CheckCircle, XCircle
 } from 'lucide-react';
 import Link from 'next/link';
-import { adminApi } from '@/lib/api';
+import { adminApi, sessionApi } from '@/lib/api';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -26,8 +26,8 @@ export default function SessionResultsPage() {
 
   useEffect(() => {
     Promise.all([
-      adminApi.sessionResults(sessionId),
-      adminApi.analytics(sessionId),
+      adminApi.results({ session_id: sessionId }),
+      adminApi.dashboard(),
     ]).then(([rRes, aRes]) => {
       setData(rRes.data);
       setAnalytics(aRes.data);
@@ -37,8 +37,16 @@ export default function SessionResultsPage() {
 
   const exportCsv = async () => {
     try {
-      const res = await adminApi.exportCsv(sessionId);
-      const url = URL.createObjectURL(new Blob([res.data]));
+      const res = await adminApi.results({ session_id: sessionId });
+      const results = res.data?.results || [];
+      const headers = ['Rank','Student','Roll No','Score','Max Score','Percentage','Time (min)','Warnings','Status'];
+      const rows = results.map((r: any, i: number) => [
+        i + 1, r.student_name, r.roll_number || '', r.score?.toFixed(1),
+        r.max_score, r.percentage?.toFixed(1), r.time_taken_seconds ? Math.floor(r.time_taken_seconds / 60) : '',
+        r.warning_count, r.status
+      ]);
+      const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
       const a = document.createElement('a');
       a.href = url;
       a.download = `results-${sessionId}.csv`;
@@ -106,7 +114,6 @@ export default function SessionResultsPage() {
 
       {/* Charts row */}
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
-        {/* Score distribution */}
         <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-5">
           <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-brand-400" /> Score Distribution
@@ -116,15 +123,12 @@ export default function SessionResultsPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="range" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} />
               <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{ background: '#1A1F35', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#fff' }}
-              />
+              <Tooltip contentStyle={{ background: '#1A1F35', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#fff' }} />
               <Bar dataKey="count" fill="#5B6AF5" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </motion.div>
 
-        {/* Topic performance */}
         {analytics?.topic_performance?.length > 0 && (
           <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-5">
             <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
@@ -135,9 +139,7 @@ export default function SessionResultsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis type="number" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} />
                 <YAxis dataKey="topic" type="category" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} width={80} />
-                <Tooltip
-                  contentStyle={{ background: '#1A1F35', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#fff' }}
-                />
+                <Tooltip contentStyle={{ background: '#1A1F35', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#fff' }} />
                 <Bar dataKey="avg_score" fill="#10B981" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
