@@ -121,4 +121,7 @@ export const classApi = {
   list: () => api.get('/classes'),
   create: (data: any) => api.post('/classes', data),
   delete: (id: string) => api.delete(`/classes/${id}`),
+
+  enrollStudent: (classId: string, studentId: string) =>
+    api.post(`/classes/${classId}/students/${studentId}`),
 };
