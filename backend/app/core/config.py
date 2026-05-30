@@ -28,8 +28,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    # Anthropic Claude API (console.anthropic.com)
-    ANTHROPIC_API_KEY: str = ""
+    # Groq API (free at console.groq.com)
+    GROQ_API_KEY: str = ""
 
     # Super Admin
     SUPER_ADMIN_EMAIL: str = "admin@intervex.ai"

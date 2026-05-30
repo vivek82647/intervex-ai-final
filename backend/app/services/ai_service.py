@@ -1,5 +1,5 @@
 """
-AI Service - Anthropic Claude API
+AI Service - Groq API (Free)
 """
 import json
 import logging
@@ -11,37 +11,37 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_URL = "https://api.anthropic.com/v1/messages"
-CLAUDE_MODEL = "claude-3-5-haiku-latest"  # Fast + cheap
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 class AIService:
-    async def _call_claude(self, prompt: str, system: str = "") -> str:
-        if not settings.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY not set. Get key at console.anthropic.com")
+    async def _call_groq(self, prompt: str, system: str = "") -> str:
+        if not settings.GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY not set. Get free key at console.groq.com")
         
         last_err = None
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
-                        CLAUDE_URL,
+                        GROQ_URL,
                         headers={
-                            "x-api-key": settings.ANTHROPIC_API_KEY,
-                            "anthropic-version": "2023-06-01",
+                            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
                             "Content-Type": "application/json",
                         },
                         json={
-                            "model": CLAUDE_MODEL,
-                            "max_tokens": 1024,
-                            "system": system or "You are a helpful assistant.",
-                            "messages": [{"role": "user", "content": prompt}],
+                            "model": GROQ_MODEL,
+                            "messages": [
+                                {"role": "system", "content": system or "You are a helpful assistant."},
+                                {"role": "user", "content": prompt},
+                            ],
+                            "temperature": 0.7,
+                            "max_tokens": 2048,
                         },
                     )
-                    if response.status_code != 200:
-                      logger.error(response.text)
-                      response.raise_for_status()
-                    return response.json()["content"][0]["text"]
+                    response.raise_for_status()
+                    return response.json()["choices"][0]["message"]["content"]
             except Exception as e:
                 last_err = e
                 if attempt < 2:
@@ -50,9 +50,9 @@ class AIService:
 
     async def generate(self, prompt: str, system: str = "") -> str:
         try:
-            return await self._call_claude(prompt, system)
+            return await self._call_groq(prompt, system)
         except Exception as e:
-            logger.error(f"Claude API failed: {e}")
+            logger.error(f"Groq API failed: {e}")
             raise
 
     async def generate_questions(
