@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Space_Grotesk, JetBrains_Mono, Syne } from 'next/font/google';
 import './globals.css';
 import { Toaster } from 'react-hot-toast';
+import KeepAlive from '@/components/KeepAlive';
 
 const displayFont = Syne({
   subsets: ['latin'],
@@ -32,7 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="dark">
       <body className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable} font-body bg-surface text-white antialiased`}>
         {children}
-        <Toaster
+        <KeepAlive />
+      <Toaster
           position="top-right"
           toastOptions={{
             style: {

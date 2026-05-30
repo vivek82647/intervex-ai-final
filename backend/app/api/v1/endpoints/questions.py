@@ -195,23 +195,29 @@ async def upload_questions_csv(
     errors = []
     
     for i, row in enumerate(reader, 1):
+        # Only check fields that exist in header
         missing = required_fields - set(row.keys())
         if missing:
             errors.append(f"Row {i}: Missing fields: {missing}")
             continue
         
+        # Skip empty rows
+        if not row.get("type") or not row.get("content"):
+            errors.append(f"Row {i}: Empty type or content")
+            continue
+
         try:
-            # Parse MCQ options from CSV (format: "A|text|0,B|text|1,...")
+            # Parse MCQ options (format: "A|text|0,B|text|1,...")
             options = None
-            if row["type"] == "mcq" and row.get("options"):
+            if row.get("type") == "mcq" and row.get("options"):
                 options = []
                 for opt_str in row["options"].split(","):
                     parts = opt_str.strip().split("|")
                     if len(parts) >= 2:
                         options.append({
-                            "id": parts[0],
-                            "text": parts[1],
-                            "is_correct": parts[2] == "1" if len(parts) > 2 else False
+                            "id": parts[0].strip(),
+                            "text": parts[1].strip(),
+                            "is_correct": parts[2].strip() == "1" if len(parts) > 2 else False
                         })
             
             question = Question(

@@ -17,25 +17,34 @@ class AIService:
     async def _call_groq(self, prompt: str, system: str = "") -> str:
         if not settings.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY not set. Get free key at console.groq.com")
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                GROQ_URL,
-                headers={
-                    "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.GROQ_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system or "You are a helpful assistant."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 2048,
-                },
-            )
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+        last_err = None
+        for attempt in range(3):  # retry 3 times
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        GROQ_URL,
+                        headers={
+                            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": settings.GROQ_MODEL,
+                            "messages": [
+                                {"role": "system", "content": system or "You are a helpful assistant."},
+                                {"role": "user", "content": prompt},
+                            ],
+                            "temperature": 0.7,
+                            "max_tokens": 2048,
+                        },
+                    )
+                    response.raise_for_status()
+                    return response.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    import asyncio
+                    await asyncio.sleep(2)
+        raise last_err
 
     async def generate(self, prompt: str, system: str = "") -> str:
         try:

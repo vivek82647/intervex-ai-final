@@ -86,7 +86,8 @@ async def start_attempt(
         "status": attempt.status,
         "started_at": attempt.started_at,
         "question_order": question_ids,
-        "duration_minutes": session.duration_minutes
+        "duration_minutes": session.duration_minutes,
+        "max_warnings": session.max_warnings
     }
 
 
@@ -199,34 +200,16 @@ async def record_warning(
         raise HTTPException(status_code=404, detail="Attempt not found")
     
     warning = Warning(
-    id=str(uuid.uuid4()),
-    attempt_id=attempt_id,
-    type=data.type,
-    details=data.details,
-     )
-     db.add(warning)
-
-     attempt.warning_count += 1
-     
-     # Get session settings
-     session_result = await db.execute(
-         select(DBSession).where(DBSession.id == attempt.session_id)
-     )
-     session = session_result.scalar_one_or_none()
-     
-     # Auto terminate if warnings exceeded
-     if session and attempt.warning_count >= session.max_warnings:
-         attempt.status = "terminated"
-         attempt.termination_reason = (
-             f"Maximum warnings exceeded ({session.max_warnings})"
-         )
-     
-     await db.commit()
-
-     return {
-              "warning_count": attempt.warning_count,
-         "terminated": attempt.status == "terminated"
-     }
+        id=str(uuid.uuid4()),
+        attempt_id=attempt_id,
+        type=data.type,
+        details=data.details,
+    )
+    db.add(warning)
+    attempt.warning_count += 1
+    await db.commit()
+    
+    return {"warning_count": attempt.warning_count}
 
 
 @router.post("/{attempt_id}/submit")

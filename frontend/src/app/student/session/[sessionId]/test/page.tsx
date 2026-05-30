@@ -146,6 +146,7 @@ export default function TestPage() {
         const dur = startRes.data.duration_minutes || 60;
         setSessionDuration(dur);
         setTimeLeft(dur * 60);
+        if (startRes.data.max_warnings) setMaxWarnings(startRes.data.max_warnings);
       } catch (err: any) {
         toast.error(err?.response?.data?.detail || 'Failed to start test');
       }
@@ -187,12 +188,20 @@ export default function TestPage() {
       if (!attemptId) return;
       try {
         const res = await attemptApi.recordWarning(attemptId, { type, details });
-        setWarningCount(res.data.warning_count);
+        const newCount = res.data.warning_count;
+        setWarningCount(newCount);
         socket.emit('anti_cheat_warning', { type, details, session_id: sessionId, student_id: studentId, max_warnings: maxWarnings });
+        // Frontend-side termination if backend/socket doesn't respond
+        if (newCount >= maxWarnings) {
+          toast.error('Too many violations! Test terminated.', { duration: 0 });
+          setTimeout(() => router.push(`/student/result?terminated=true&reason=Too many warnings`), 2000);
+        }
       } catch { }
     };
 
+    // Tab switch - works on mobile too (pagehide for iOS Safari)
     const onVisibilityChange = () => { if (document.hidden) reportViolation('tab_switch', { timestamp: new Date().toISOString() }); };
+    const onPageHide = () => reportViolation('tab_switch', { timestamp: new Date().toISOString() });
     const onCopy = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'copy' }); };
     const onPaste = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'paste' }); };
     const onContextMenu = (e: Event) => { e.preventDefault(); reportViolation('right_click'); };
@@ -201,17 +210,34 @@ export default function TestPage() {
     };
     const onFullscreenChange = () => { if (!document.fullscreenElement) reportViolation('fullscreen_exit'); };
 
+    // Mobile: track touch outside (app switch on phone)
+    let lastTouchTime = Date.now();
+    const onFocus = () => {
+      const gap = Date.now() - lastTouchTime;
+      if (gap > 3000) reportViolation('tab_switch', { gap_ms: gap });
+      lastTouchTime = Date.now();
+    };
+    const onBlur = () => { lastTouchTime = Date.now(); };
+
     document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide); // iOS Safari
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
     document.addEventListener('copy', onCopy);
     document.addEventListener('paste', onPaste);
     document.addEventListener('contextmenu', onContextMenu);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('fullscreenchange', onFullscreenChange);
-    document.documentElement.requestFullscreen().catch(() => {});
+    // Only request fullscreen on desktop (mobile fullscreen API unreliable)
+    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    if (!isMobile) document.documentElement.requestFullscreen().catch(() => {});
 
     return () => {
       socket.disconnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('paste', onPaste);
       document.removeEventListener('contextmenu', onContextMenu);
