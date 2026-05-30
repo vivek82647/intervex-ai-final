@@ -9,7 +9,7 @@ import {
   CheckCircle, XCircle
 } from 'lucide-react';
 import Link from 'next/link';
-import { resultsApi } from '@/lib/api';
+import { adminApi } from '@/lib/api';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -26,8 +26,8 @@ export default function SessionResultsPage() {
 
   useEffect(() => {
     Promise.all([
-      resultsApi.sessionResults(sessionId),
-      resultsApi.analytics(sessionId),
+      adminApi.sessionResults(sessionId),
+      adminApi.analytics(sessionId),
     ]).then(([rRes, aRes]) => {
       setData(rRes.data);
       setAnalytics(aRes.data);
@@ -37,7 +37,7 @@ export default function SessionResultsPage() {
 
   const exportCsv = async () => {
     try {
-      const res = await resultsApi.exportCsv(sessionId);
+      const res = await adminApi.exportCsv(sessionId);
       const url = URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
