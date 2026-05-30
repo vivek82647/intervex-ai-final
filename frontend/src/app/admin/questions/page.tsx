@@ -3,8 +3,8 @@ import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  Plus, Brain, Upload, Search, Filter, Trash2, BookOpen,
-  ChevronDown, Sparkles, Code2, AlignLeft, CircleDot
+  Plus, Brain, Upload, Search, Trash2, BookOpen,
+  Sparkles, Code2, AlignLeft, CircleDot, CheckSquare, Square, XCircle
 } from 'lucide-react';
 import { questionApi } from '@/lib/api';
 import type { Question } from '@/types';
@@ -33,6 +33,8 @@ export default function QuestionBankPage() {
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiForm, setAIForm] = useState({ topic: '', difficulty: 'medium', count: 5, type: 'mcq', marks: 1, context: '' });
   const [aiLoading, setAILoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -44,11 +46,28 @@ export default function QuestionBankPage() {
       ]);
       setQuestions(qRes.data);
       setStats(sRes.data);
+      setSelected(new Set()); // clear selection on reload
     } catch { toast.error('Failed to load'); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [search, typeFilter, diffFilter]);
+
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (selected.size === questions.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(questions.map(q => q.id)));
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this question?')) return;
@@ -57,6 +76,29 @@ export default function QuestionBankPage() {
       toast.success('Deleted');
       load();
     } catch { toast.error('Delete failed'); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} selected question${selected.size > 1 ? 's' : ''}?`)) return;
+    setDeleting(true);
+    try {
+      await Promise.all([...selected].map(id => questionApi.delete(id)));
+      toast.success(`Deleted ${selected.size} questions`);
+      load();
+    } catch { toast.error('Some deletions failed'); }
+    finally { setDeleting(false); }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm(`Delete ALL ${questions.length} questions? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await Promise.all(questions.map(q => questionApi.delete(q.id)));
+      toast.success('All questions deleted');
+      load();
+    } catch { toast.error('Some deletions failed'); }
+    finally { setDeleting(false); }
   };
 
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,6 +132,8 @@ export default function QuestionBankPage() {
     } finally { setAILoading(false); }
   };
 
+  const allSelected = questions.length > 0 && selected.size === questions.length;
+
   return (
     <div>
       <div className="page-header flex-wrap gap-3">
@@ -97,7 +141,7 @@ export default function QuestionBankPage() {
           <h1 className="section-title">Question Bank</h1>
           <p className="text-white/40 text-sm mt-1">{stats.total || 0} total questions</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <input ref={fileRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
           <button onClick={() => fileRef.current?.click()} className="btn-secondary flex items-center gap-2 text-sm">
             <Upload className="w-4 h-4" /> CSV Import
@@ -111,16 +155,13 @@ export default function QuestionBankPage() {
         </div>
       </div>
 
-      {/* Stats overview */}
+      {/* Stats */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
         {TYPES.map(type => {
           const cfg = TYPE_CONFIG[type];
           return (
-            <button
-              key={type}
-              onClick={() => setTypeFilter(typeFilter === type ? '' : type)}
-              className={`glass-card p-3 text-center transition-all ${typeFilter === type ? 'border-brand-500/40 bg-brand-500/10' : 'hover:border-white/15'}`}
-            >
+            <button key={type} onClick={() => setTypeFilter(typeFilter === type ? '' : type)}
+              className={`glass-card p-3 text-center transition-all ${typeFilter === type ? 'border-brand-500/40 bg-brand-500/10' : 'hover:border-white/15'}`}>
               <cfg.icon className={`w-5 h-5 mx-auto mb-1 ${cfg.color}`} />
               <div className="text-lg font-bold text-white">{stats.by_type?.[type] || 0}</div>
               <div className="text-xs text-white/40">{cfg.label}</div>
@@ -128,27 +169,19 @@ export default function QuestionBankPage() {
           );
         })}
         {DIFFICULTIES.slice(0, 3).map(d => (
-          <button
-            key={d}
-            onClick={() => setDiffFilter(diffFilter === d ? '' : d)}
-            className={`glass-card p-3 text-center transition-all ${diffFilter === d ? 'border-brand-500/40 bg-brand-500/10' : 'hover:border-white/15'}`}
-          >
+          <button key={d} onClick={() => setDiffFilter(diffFilter === d ? '' : d)}
+            className={`glass-card p-3 text-center transition-all ${diffFilter === d ? 'border-brand-500/40 bg-brand-500/10' : 'hover:border-white/15'}`}>
             <div className={`text-lg font-bold ${DIFF_COLOR[d]}`}>{stats.by_difficulty?.[d] || 0}</div>
             <div className="text-xs text-white/40 capitalize">{d}</div>
           </button>
         ))}
       </div>
 
-      {/* Search & filter */}
-      <div className="flex gap-3 mb-5">
-        <div className="relative flex-1">
+      {/* Search + filters + bulk actions */}
+      <div className="flex gap-3 mb-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search questions..."
-            className="input-field pl-9"
-          />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search questions..." className="input-field pl-9" />
         </div>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="input-field w-36">
           <option value="">All Types</option>
@@ -159,6 +192,41 @@ export default function QuestionBankPage() {
           {DIFFICULTIES.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </div>
+
+      {/* Selection toolbar */}
+      {questions.length > 0 && (
+        <div className="flex items-center gap-3 mb-4 px-1">
+          <button onClick={selectAll} className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors">
+            {allSelected
+              ? <CheckSquare className="w-4 h-4 text-brand-400" />
+              : <Square className="w-4 h-4" />}
+            {allSelected ? 'Deselect All' : 'Select All'}
+          </button>
+
+          {selected.size > 0 && (
+            <>
+              <span className="text-xs text-white/30">{selected.size} selected</span>
+              <button onClick={handleBulkDelete} disabled={deleting}
+                className="flex items-center gap-1.5 text-sm text-accent-rose hover:text-white bg-accent-rose/10 hover:bg-accent-rose border border-accent-rose/30 hover:border-accent-rose px-3 py-1.5 rounded-lg transition-all">
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleting ? 'Deleting...' : `Delete Selected (${selected.size})`}
+              </button>
+              <button onClick={() => setSelected(new Set())}
+                className="text-white/30 hover:text-white transition-colors">
+                <XCircle className="w-4 h-4" />
+              </button>
+            </>
+          )}
+
+          {selected.size === 0 && questions.length > 0 && (
+            <button onClick={handleDeleteAll} disabled={deleting}
+              className="ml-auto flex items-center gap-1.5 text-xs text-white/30 hover:text-accent-rose transition-colors">
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete All
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Questions list */}
       {loading ? (
@@ -178,15 +246,20 @@ export default function QuestionBankPage() {
         <div className="space-y-2">
           {questions.map((q, i) => {
             const cfg = TYPE_CONFIG[q.type];
+            const isSelected = selected.has(q.id);
             return (
-              <motion.div
-                key={q.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.02 }}
-                className="glass-card p-4 flex items-center gap-4 hover:border-white/15 transition-all group"
+              <motion.div key={q.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                className={`glass-card p-4 flex items-center gap-4 hover:border-white/15 transition-all group cursor-pointer ${isSelected ? 'border-brand-500/40 bg-brand-500/5' : ''}`}
+                onClick={() => toggleSelect(q.id)}
               >
-                <div className={`w-8 h-8 rounded-lg bg-current/10 flex items-center justify-center flex-shrink-0`}>
+                {/* Checkbox */}
+                <div className="flex-shrink-0">
+                  {isSelected
+                    ? <CheckSquare className="w-4 h-4 text-brand-400" />
+                    : <Square className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors" />}
+                </div>
+
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0`}>
                   <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -201,10 +274,8 @@ export default function QuestionBankPage() {
                   <span>{q.marks}m</span>
                   {q.negative_marks > 0 && <span className="text-accent-rose">-{q.negative_marks}</span>}
                 </div>
-                <button
-                  onClick={() => handleDelete(q.id)}
-                  className="opacity-0 group-hover:opacity-100 text-white/20 hover:text-accent-rose transition-all p-1"
-                >
+                <button onClick={e => { e.stopPropagation(); handleDelete(q.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-white/20 hover:text-accent-rose transition-all p-1">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </motion.div>
