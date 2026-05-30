@@ -12,7 +12,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"  # Fast + cheap
+CLAUDE_MODEL = "claude-3-5-haiku-latest"  # Fast + cheap
 
 
 class AIService:
@@ -33,12 +33,14 @@ class AIService:
                         },
                         json={
                             "model": CLAUDE_MODEL,
-                            "max_tokens": 2048,
+                            "max_tokens": 1024,
                             "system": system or "You are a helpful assistant.",
                             "messages": [{"role": "user", "content": prompt}],
                         },
                     )
-                    response.raise_for_status()
+                    if response.status_code != 200:
+                      logger.error(response.text)
+                      response.raise_for_status()
                     return response.json()["content"][0]["text"]
             except Exception as e:
                 last_err = e
