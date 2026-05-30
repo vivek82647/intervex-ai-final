@@ -208,23 +208,58 @@ async def upload_questions_csv(
 
         try:
             # Parse MCQ options
-            # Supports both formats:
-            # Semicolon: "A|text|0;B|text|1" (recommended)
-            # Comma:     "A|text|0,B|text|1"
             options = None
-            if row.get("type") == "mcq" and row.get("options"):
-                options = []
-                raw = row["options"].strip()
-                # Use semicolon if present, else comma
-                sep = ";" if ";" in raw else ","
-                for opt_str in raw.split(sep):
-                    parts = opt_str.strip().split("|")
-                    if len(parts) >= 2:
-                        options.append({
-                            "id": parts[0].strip(),
-                            "text": parts[1].strip(),
-                            "is_correct": parts[2].strip() == "1" if len(parts) > 2 else False
-                        })
+
+            if row.get("type", "").lower() == "mcq":
+
+                # Format 1: options column
+                if row.get("options"):
+                    options = []
+                    raw = row["options"].strip()
+
+                    sep = ";" if ";" in raw else ","
+
+                    for opt_str in raw.split(sep):
+                        parts = opt_str.strip().split("|")
+
+                        if len(parts) >= 2:
+                            options.append({
+                                "id": parts[0].strip(),
+                                "text": parts[1].strip(),
+                                "is_correct": parts[2].strip() == "1" if len(parts) > 2 else False
+                            })
+
+                # Format 2: option_a option_b option_c option_d
+                elif row.get("option_a"):
+                    correct = str(
+                        row.get("correct_answer", "")
+                    ).strip().upper()
+
+                    options = [
+                        {
+                            "id": "A",
+                            "text": row.get("option_a", "").strip(),
+                            "is_correct": correct == "A"
+                        },
+                        {
+                            "id": "B",
+                            "text": row.get("option_b", "").strip(),
+                            "is_correct": correct == "B"
+                        },
+                        {
+                            "id": "C",
+                            "text": row.get("option_c", "").strip(),
+                            "is_correct": correct == "C"
+                        },
+                        {
+                            "id": "D",
+                            "text": row.get("option_d", "").strip(),
+                            "is_correct": correct == "D"
+                        }
+                    ]
+
+                    # remove empty options
+                    options = [o for o in options if o["text"]]
             
             question = Question(
                 id=str(uuid.uuid4()),
