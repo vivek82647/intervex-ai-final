@@ -207,11 +207,17 @@ async def upload_questions_csv(
             continue
 
         try:
-            # Parse MCQ options (format: "A|text|0,B|text|1,...")
+            # Parse MCQ options
+            # Supports both formats:
+            # Semicolon: "A|text|0;B|text|1" (recommended)
+            # Comma:     "A|text|0,B|text|1"
             options = None
             if row.get("type") == "mcq" and row.get("options"):
                 options = []
-                for opt_str in row["options"].split(","):
+                raw = row["options"].strip()
+                # Use semicolon if present, else comma
+                sep = ";" if ";" in raw else ","
+                for opt_str in raw.split(sep):
                     parts = opt_str.strip().split("|")
                     if len(parts) >= 2:
                         options.append({
