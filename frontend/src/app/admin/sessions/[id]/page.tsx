@@ -32,17 +32,26 @@ export default function SessionDetailPage() {
   };
 
   const updateStatus = async (status: string) => {
-    if (!session) return;
-    setActivating(true);
-    try {
-      await sessionApi.updateStatus(session.id, status);
-      toast.success(`Session ${status}`);
-      const res = await sessionApi.get(session.id);
-      setSession(res.data);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Update failed');
-    } finally { setActivating(false); }
-  };
+  if (!session) return;
+
+  setActivating(true);
+
+  try {
+    status === 'active'
+      ? await sessionApi.activate(session.id)
+      : await sessionApi.end(session.id);
+
+    toast.success(`Session ${status}`);
+
+    const res = await sessionApi.get(session.id);
+    setSession(res.data);
+
+  } catch (err: any) {
+    toast.error(err?.response?.data?.detail || 'Update failed');
+  } finally {
+    setActivating(false);
+  }
+};
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
