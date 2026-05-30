@@ -6,7 +6,7 @@ import {
   Plus, Brain, Upload, Search, Trash2, BookOpen,
   Sparkles, Code2, AlignLeft, CircleDot, CheckSquare, Square, XCircle
 } from 'lucide-react';
-import { questionApi } from '@/lib/api';
+import { questionApi, api } from '@/lib/api';
 import type { Question } from '@/types';
 
 const DIFFICULTIES = ['easy', 'medium', 'moderate', 'hard', 'high'];
@@ -35,6 +35,11 @@ export default function QuestionBankPage() {
   const [aiLoading, setAILoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [showExtractModal, setShowExtractModal] = useState(false);
+  const [extractForm, setExtractForm] = useState({ type: 'mcq', difficulty: 'medium', count: 10, marks: 1 });
+  const [extractFile, setExtractFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const extractFileRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -132,6 +137,29 @@ export default function QuestionBankPage() {
     } finally { setAILoading(false); }
   };
 
+  const handleExtractUpload = async () => {
+    if (!extractFile) return;
+    setExtracting(true);
+    try {
+      const form = new FormData();
+      form.append('file', extractFile);
+      form.append('q_type', extractForm.type);
+      form.append('difficulty', extractForm.difficulty);
+      form.append('count', String(extractForm.count));
+      form.append('marks', String(extractForm.marks));
+      const res = await api.post('/questions/extract-upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      });
+      toast.success(`Generated ${res.data.generated_count} questions from file!`);
+      setShowExtractModal(false);
+      setExtractFile(null);
+      load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Extraction failed');
+    } finally { setExtracting(false); }
+  };
+
   const allSelected = questions.length > 0 && selected.size === questions.length;
 
   return (
@@ -145,6 +173,9 @@ export default function QuestionBankPage() {
           <input ref={fileRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
           <button onClick={() => fileRef.current?.click()} className="btn-secondary flex items-center gap-2 text-sm">
             <Upload className="w-4 h-4" /> CSV Import
+          </button>
+          <button onClick={() => setShowExtractModal(true)} className="btn-secondary flex items-center gap-2 text-sm border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10">
+            <Brain className="w-4 h-4" /> PDF/Image/Doc
           </button>
           <button onClick={() => setShowAIModal(true)} className="btn-secondary flex items-center gap-2 text-sm border-brand-500/30 text-brand-400 hover:bg-brand-500/10">
             <Sparkles className="w-4 h-4" /> AI Generate
@@ -283,6 +314,64 @@ export default function QuestionBankPage() {
           })}
         </div>
       )}
+
+      {/* Extract from File Modal */}
+      <AnimatePresence>
+        {showExtractModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-card w-full max-w-md p-6">
+              <h2 className="font-display text-xl font-bold text-white mb-1 flex items-center gap-2">
+                <Brain className="w-5 h-5 text-accent-cyan" /> Extract from File
+              </h2>
+              <p className="text-white/40 text-xs mb-5">Upload PDF, image (JPG/PNG), DOCX, or TXT — AI will generate questions from it</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-white/60 mb-2">File *</label>
+                  <input ref={extractFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.docx,.txt" className="hidden"
+                    onChange={e => setExtractFile(e.target.files?.[0] || null)} />
+                  <button onClick={() => extractFileRef.current?.click()}
+                    className={`w-full p-4 rounded-xl border-2 border-dashed text-sm transition-all ${extractFile ? 'border-accent-cyan/50 bg-accent-cyan/5 text-accent-cyan' : 'border-white/10 text-white/30 hover:border-white/20'}`}>
+                    {extractFile ? `✓ ${extractFile.name}` : 'Click to upload PDF / Image / DOCX / TXT'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-white/60 mb-2">Question Type</label>
+                    <select value={extractForm.type} onChange={e => setExtractForm(p => ({...p, type: e.target.value}))} className="input-field">
+                      <option value="mcq">MCQ</option>
+                      <option value="descriptive">Descriptive</option>
+                      <option value="coding">Coding</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-white/60 mb-2">Difficulty</label>
+                    <select value={extractForm.difficulty} onChange={e => setExtractForm(p => ({...p, difficulty: e.target.value}))} className="input-field">
+                      {DIFFICULTIES.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-white/60 mb-2">Count</label>
+                    <input value={extractForm.count} onChange={e => setExtractForm(p => ({...p, count: +e.target.value}))} type="number" min="1" max="20" className="input-field" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-white/60 mb-2">Marks each</label>
+                    <input value={extractForm.marks} onChange={e => setExtractForm(p => ({...p, marks: +e.target.value}))} type="number" min="0.5" className="input-field" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => { setShowExtractModal(false); setExtractFile(null); }} className="btn-secondary flex-1">Cancel</button>
+                <button onClick={handleExtractUpload} disabled={extracting || !extractFile} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                  {extracting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Brain className="w-4 h-4" />}
+                  {extracting ? 'Extracting...' : 'Extract & Generate'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* AI Generate Modal */}
       <AnimatePresence>

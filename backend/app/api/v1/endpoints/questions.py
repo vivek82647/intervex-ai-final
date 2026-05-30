@@ -208,58 +208,23 @@ async def upload_questions_csv(
 
         try:
             # Parse MCQ options
+            # Supports both formats:
+            # Semicolon: "A|text|0;B|text|1" (recommended)
+            # Comma:     "A|text|0,B|text|1"
             options = None
-
-            if row.get("type", "").lower() == "mcq":
-
-                # Format 1: options column
-                if row.get("options"):
-                    options = []
-                    raw = row["options"].strip()
-
-                    sep = ";" if ";" in raw else ","
-
-                    for opt_str in raw.split(sep):
-                        parts = opt_str.strip().split("|")
-
-                        if len(parts) >= 2:
-                            options.append({
-                                "id": parts[0].strip(),
-                                "text": parts[1].strip(),
-                                "is_correct": parts[2].strip() == "1" if len(parts) > 2 else False
-                            })
-
-                # Format 2: option_a option_b option_c option_d
-                elif row.get("option_a"):
-                    correct = str(
-                        row.get("correct_answer", "")
-                    ).strip().upper()
-
-                    options = [
-                        {
-                            "id": "A",
-                            "text": row.get("option_a", "").strip(),
-                            "is_correct": correct == "A"
-                        },
-                        {
-                            "id": "B",
-                            "text": row.get("option_b", "").strip(),
-                            "is_correct": correct == "B"
-                        },
-                        {
-                            "id": "C",
-                            "text": row.get("option_c", "").strip(),
-                            "is_correct": correct == "C"
-                        },
-                        {
-                            "id": "D",
-                            "text": row.get("option_d", "").strip(),
-                            "is_correct": correct == "D"
-                        }
-                    ]
-
-                    # remove empty options
-                    options = [o for o in options if o["text"]]
+            if row.get("type") == "mcq" and row.get("options"):
+                options = []
+                raw = row["options"].strip()
+                # Use semicolon if present, else comma
+                sep = ";" if ";" in raw else ","
+                for opt_str in raw.split(sep):
+                    parts = opt_str.strip().split("|")
+                    if len(parts) >= 2:
+                        options.append({
+                            "id": parts[0].strip(),
+                            "text": parts[1].strip(),
+                            "is_correct": parts[2].strip() == "1" if len(parts) > 2 else False
+                        })
             
             question = Question(
                 id=str(uuid.uuid4()),
@@ -312,3 +277,111 @@ async def delete_question(
     await db.delete(question)
     await db.commit()
     return {"success": True}
+
+
+@router.post("/extract-upload")
+async def extract_questions_from_file(
+    file: UploadFile = File(...),
+    q_type: str = "mcq",
+    difficulty: str = "medium",
+    count: int = 10,
+    marks: float = 1.0,
+    current_user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Extract questions from PDF, image, or DOCX using AI"""
+    from app.services.file_extractor import extract_text_from_file
+
+    allowed = {'.pdf', '.png', '.jpg', '.jpeg', '.docx', '.txt', '.webp'}
+    ext = '.' + file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unsupported file. Use: PDF, PNG, JPG, DOCX, TXT")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
+
+    # Extract text
+    try:
+        text = await extract_text_from_file(content, file.filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if len(text) < 50:
+        raise HTTPException(status_code=400, detail="Too little text extracted from file.")
+
+    # Trim text to avoid token limits
+    text = text[:6000]
+
+    # Generate questions using Groq
+    system = "You are an expert educator. Generate assessment questions as valid JSON array only. No extra text."
+
+    if q_type == "mcq":
+        prompt = f"""Based on this content, generate {count} MCQ questions at {difficulty} difficulty.
+
+CONTENT:
+{text}
+
+Return ONLY a JSON array:
+[{{"title":"Short title","content":"Full question","options":[{{"id":"a","text":"Option A","is_correct":false}},{{"id":"b","text":"Option B","is_correct":true}},{{"id":"c","text":"Option C","is_correct":false}},{{"id":"d","text":"Option D","is_correct":false}}],"correct_answer":"b","explanation":"Why correct","marks":{marks},"topic":"Extracted","difficulty":"{difficulty}"}}]"""
+
+    elif q_type == "descriptive":
+        prompt = f"""Based on this content, generate {count} descriptive questions at {difficulty} difficulty.
+
+CONTENT:
+{text}
+
+Return ONLY a JSON array:
+[{{"title":"Short title","content":"Full question","correct_answer":"Model answer","marks":{marks},"topic":"Extracted","difficulty":"{difficulty}"}}]"""
+
+    else:  # coding
+        prompt = f"""Based on this content, generate {count} coding problems at {difficulty} difficulty.
+
+CONTENT:
+{text}
+
+Return ONLY a JSON array:
+[{{"title":"Problem title","content":"Problem statement","starter_code":{{"python":"# code here"}},"marks":{marks},"topic":"Extracted","difficulty":"{difficulty}"}}]"""
+
+    try:
+        import json, re
+        result = (await ai_service.generate(prompt, system)).strip()
+        if result.startswith("```"):
+            result = re.sub(r"```(?:json)?", "", result).strip().rstrip("`")
+        start = result.find("[")
+        end = result.rfind("]") + 1
+        if start == -1 or end <= start:
+            raise ValueError("AI did not return valid JSON")
+        generated = json.loads(result[start:end])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+    # Save to DB
+    saved = []
+    for q_data in generated:
+        question = Question(
+            id=str(uuid.uuid4()),
+            admin_id=current_user["user_id"],
+            type=q_type,
+            difficulty=difficulty,
+            topic=q_data.get("topic", "Extracted"),
+            title=q_data.get("title", ""),
+            content=q_data.get("content", ""),
+            options=q_data.get("options"),
+            correct_answer=q_data.get("correct_answer"),
+            explanation=q_data.get("explanation"),
+            marks=q_data.get("marks", marks),
+            test_cases=q_data.get("test_cases"),
+            starter_code=q_data.get("starter_code"),
+            is_ai_generated=True,
+            source="file_extract"
+        )
+        db.add(question)
+        saved.append(question)
+
+    await db.commit()
+    return {
+        "extracted_chars": len(text),
+        "generated_count": len(saved),
+        "questions": [{"id": q.id, "title": q.title} for q in saved]
+    }
