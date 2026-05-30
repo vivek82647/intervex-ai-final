@@ -31,7 +31,39 @@ export default function InstructionsPage() {
   const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
-    sessionApi.get(sessionId).then(r => setSession(r.data)).catch(() => {}).finally(() => setLoading(false));
+    const checkAttempt = async () => {
+      try {
+        // Check if student already has terminated/submitted attempt
+        const sessionRes = await sessionApi.get(sessionId);
+        setSession(sessionRes.data);
+        // Try to get existing attempt status
+        const { studentId } = useStudentStore.getState();
+        if (studentId) {
+          try {
+            const attemptRes = await attemptApi.start({ session_id: sessionId });
+            if (attemptRes.data.status === 'terminated') {
+              router.replace(`/student/terminated`);
+              return;
+            }
+            if (attemptRes.data.status === 'submitted') {
+              router.replace(`/student/result/${attemptRes.data.attempt_id}`);
+              return;
+            }
+          } catch (e: any) {
+            const detail = e?.response?.data?.detail || '';
+            if (detail.includes('terminated')) {
+              router.replace(`/student/terminated`);
+              return;
+            }
+            if (detail.includes('already submitted')) {
+              router.replace(`/student/session/${sessionId}/submitted`);
+              return;
+            }
+          }
+        }
+      } catch {} finally { setLoading(false); }
+    };
+    checkAttempt();
   }, [sessionId]);
 
   const startTest = async () => {

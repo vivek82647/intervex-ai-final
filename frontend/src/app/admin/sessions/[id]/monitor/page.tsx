@@ -47,7 +47,9 @@ export default function MonitorPage() {
 
     socket.on('connect', () => {
       setConnected(true);
-      socket.emit('admin_watch', { session_id: sessionId, admin_id: user?.id });
+      // Use sessionId as admin identifier if user not loaded yet
+      const adminId = user?.id || 'admin-' + sessionId;
+      socket.emit('admin_watch', { session_id: sessionId, admin_id: adminId });
     });
 
     socket.on('disconnect', () => setConnected(false));

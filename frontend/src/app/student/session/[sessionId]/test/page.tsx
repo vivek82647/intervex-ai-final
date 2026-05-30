@@ -136,10 +136,19 @@ export default function TestPage() {
     hasLoaded.current = true;
     const init = async () => {
       try {
-        const [qRes, startRes] = await Promise.all([
-          sessionApi.getQuestions(sessionId),
-          attemptApi.start({ session_id: sessionId }),
-        ]);
+        const startRes = await attemptApi.start({ session_id: sessionId });
+        
+        // Block terminated/submitted students
+        if (startRes.data.status === 'terminated') {
+          router.replace('/student/terminated');
+          return;
+        }
+        if (startRes.data.status === 'submitted') {
+          router.replace(`/student/result/${startRes.data.attempt_id}`);
+          return;
+        }
+
+        const qRes = await sessionApi.getQuestions(sessionId);
         setQuestions(qRes.data);
         setAttemptId(startRes.data.attempt_id);
         setSession({ attemptId: startRes.data.attempt_id });
@@ -148,7 +157,16 @@ export default function TestPage() {
         setTimeLeft(dur * 60);
         if (startRes.data.max_warnings) setMaxWarnings(startRes.data.max_warnings);
       } catch (err: any) {
-        toast.error(err?.response?.data?.detail || 'Failed to start test');
+        const detail = err?.response?.data?.detail || '';
+        if (detail.includes('terminated')) {
+          router.replace('/student/terminated');
+          return;
+        }
+        if (detail.includes('already submitted')) {
+          router.replace(`/student/result/${storedAttemptId}`);
+          return;
+        }
+        toast.error(detail || 'Failed to start test');
       }
     };
     init();
