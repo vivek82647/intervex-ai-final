@@ -57,8 +57,13 @@ api.interceptors.response.use(
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
   adminRegister: (data: any) => api.post('/auth/admin/register', data),
+
   adminLogin: (data: any) => api.post('/auth/admin/login', data),
+
   studentJoin: (data: any) => api.post('/auth/student/join', data),
+
+  getSessionByLink: (link: string) =>
+    api.get(`/sessions/join/${link}`),
 };
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
