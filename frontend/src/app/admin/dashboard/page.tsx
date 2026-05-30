@@ -38,7 +38,7 @@ export default function AdminDashboard() {
     const load = async () => {
       try {
         const [statsRes, sessionsRes] = await Promise.all([
-          adminApi.getDashboard(),
+          adminApi.Dashboard(),
           sessionApi.list({ limit: 5 }),
         ]);
         setStats(statsRes.data);
