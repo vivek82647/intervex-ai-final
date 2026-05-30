@@ -14,7 +14,7 @@ import Cookies from 'js-cookie';
 const schema = z.object({
   full_name: z.string().min(2, 'Name required'),
   email: z.string().email('Valid email required'),
-  roll_number: z.string().optional(),
+  roll_number: z.string().min(1, 'Roll number is required'),
   phone: z.string().optional(),
 });
 
@@ -145,11 +145,12 @@ export default function JoinPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-white/60 mb-2">Roll Number <span className="text-white/30">(optional)</span></label>
+              <label className="block text-sm text-white/60 mb-2">Roll Number *</label>
               <div className="relative">
                 <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                 <input {...register('roll_number')} placeholder="e.g. CS2021042" className="input-field pl-10" />
               </div>
+              {errors.roll_number && <p className="text-accent-rose text-xs mt-1">{errors.roll_number.message}</p>}
             </div>
 
             <div>

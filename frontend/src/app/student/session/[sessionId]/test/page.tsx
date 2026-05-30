@@ -82,6 +82,16 @@ export default function TestPage() {
   const router = useRouter();
   const { studentId, studentName, attemptId: storedAttemptId, setSession } = useStudentStore();
 
+  // Block browser back button during test
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+    const blockBack = () => {
+      window.history.pushState(null, '', window.location.href);
+    };
+    window.addEventListener('popstate', blockBack);
+    return () => window.removeEventListener('popstate', blockBack);
+  }, []);
+
   const [questions, setQuestions] = useState<any[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});

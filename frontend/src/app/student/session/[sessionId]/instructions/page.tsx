@@ -25,6 +25,14 @@ export default function InstructionsPage() {
   const sessionId = params.sessionId as string;
   const router = useRouter();
   const { studentName } = useStudentStore();
+  // Block back button on instructions page too
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+    const blockBack = () => window.history.pushState(null, '', window.location.href);
+    window.addEventListener('popstate', blockBack);
+    return () => window.removeEventListener('popstate', blockBack);
+  }, []);
+
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
