@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_TIMEOUT_SECONDS: int = 15
+    SENDGRID_API_KEY: str = ""
+    EMAIL_FROM_ADDRESS: str = ""
 
     # JWT
     JWT_SECRET_KEY: str = secrets.token_urlsafe(32)

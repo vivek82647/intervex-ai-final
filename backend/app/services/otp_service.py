@@ -2,8 +2,11 @@
 import random
 import string
 import asyncio
+import json
 from datetime import datetime, timedelta
 import smtplib
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,16 +19,17 @@ def generate_otp(length: int = 6) -> str:
     return ''.join(random.choices(string.digits, k=length))
 
 
-def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
-    try:
-        subject_map = {
-            "login": "INTERVEX AI - Admin Login OTP",
-            "register": "INTERVEX AI - Account Verification OTP",
-            "test": "INTERVEX AI - Test Verification OTP",
-        }
-        subject = subject_map.get(purpose, "INTERVEX AI - OTP Verification")
+def get_otp_subject(purpose: str) -> str:
+    subject_map = {
+        "login": "INTERVEX AI - Admin Login OTP",
+        "register": "INTERVEX AI - Account Verification OTP",
+        "test": "INTERVEX AI - Test Verification OTP",
+    }
+    return subject_map.get(purpose, "INTERVEX AI - OTP Verification")
 
-        body = f"""
+
+def get_otp_html(otp: str) -> str:
+    return f"""
         <html>
         <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 30px;">
           <div style="max-width: 500px; margin: auto; background: white; border-radius: 10px;
@@ -47,11 +51,14 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
         </html>
         """
 
+
+def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
+    try:
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
+        msg["Subject"] = get_otp_subject(purpose)
         msg["From"] = settings.GMAIL_USER
         msg["To"] = to_email
-        msg.attach(MIMEText(body, "html"))
+        msg.attach(MIMEText(get_otp_html(otp), "html"))
 
         with smtplib.SMTP(
             settings.SMTP_HOST,
@@ -69,7 +76,38 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
         return False
 
 
+def send_otp_email_via_sendgrid(to_email: str, otp: str, purpose: str = "login") -> bool:
+    from_email = settings.EMAIL_FROM_ADDRESS or settings.GMAIL_USER
+    payload = {
+        "personalizations": [{"to": [{"email": to_email}]}],
+        "from": {"email": from_email, "name": "INTERVEX AI"},
+        "subject": get_otp_subject(purpose),
+        "content": [{"type": "text/html", "value": get_otp_html(otp)}],
+    }
+    request = Request(
+        "https://api.sendgrid.com/v3/mail/send",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.SENDGRID_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=settings.SMTP_TIMEOUT_SECONDS) as response:
+            return response.status == 202
+    except HTTPError as e:
+        print(f"[SendGrid Email Error] HTTP {e.code}: {e.read().decode('utf-8', errors='replace')}")
+        return False
+    except (URLError, TimeoutError) as e:
+        print(f"[SendGrid Email Error] {e}")
+        return False
+
+
 async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
+    if settings.APP_ENV == "production" and not settings.SENDGRID_API_KEY:
+        raise Exception("Email delivery is not configured. Add SENDGRID_API_KEY and EMAIL_FROM_ADDRESS.")
+
     # Remove previous OTPs for this purpose.
     await db.execute(
         delete(OTPRecord).where(
@@ -92,10 +130,11 @@ async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
     db.add(record)
     await db.commit()
 
-    # Run the blocking SMTP call in a worker thread.
+    # Run the blocking email provider call in a worker thread.
+    send_email = send_otp_email_via_sendgrid if settings.SENDGRID_API_KEY else send_otp_email
     try:
         sent = await asyncio.wait_for(
-            asyncio.to_thread(send_otp_email, email, otp, purpose),
+            asyncio.to_thread(send_email, email, otp, purpose),
             timeout=settings.SMTP_TIMEOUT_SECONDS + 5,
         )
     except asyncio.TimeoutError:
