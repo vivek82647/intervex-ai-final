@@ -29,6 +29,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: form.email, password: form.password }),
+        signal: AbortSignal.timeout(30000),
       });
 
       const data = await res.json();
@@ -38,7 +39,11 @@ export default function LoginPage() {
       setOtpEmail(form.email);
       setShowOTP(true);
     } catch (err: any) {
-      setError(err.message);
+      setError(
+        err.name === "TimeoutError"
+          ? "Login timed out while sending OTP. Please try again."
+          : err.message
+      );
     } finally {
       setLoading(false);
     }

@@ -55,7 +55,11 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
         msg["To"] = to_email
         msg.attach(MIMEText(body, "html"))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL(
+            "smtp.gmail.com",
+            465,
+            timeout=settings.SMTP_TIMEOUT_SECONDS,
+        ) as server:
             server.login(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
             server.sendmail(settings.GMAIL_USER, to_email, msg.as_string())
 
@@ -90,9 +94,13 @@ async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
     await db.commit()
 
     # Email bhejo (blocking call ko thread mein chalao)
-    sent = await asyncio.get_event_loop().run_in_executor(
-        None, send_otp_email, email, otp, purpose
-    )
+    try:
+        sent = await asyncio.wait_for(
+            asyncio.to_thread(send_otp_email, email, otp, purpose),
+            timeout=settings.SMTP_TIMEOUT_SECONDS + 5,
+        )
+    except asyncio.TimeoutError:
+        raise Exception("OTP email service timed out. Dobara try karo.")
     if not sent:
         raise Exception("OTP email nahi bhej sake. GMAIL_USER aur GMAIL_APP_PASSWORD check karo.")
 

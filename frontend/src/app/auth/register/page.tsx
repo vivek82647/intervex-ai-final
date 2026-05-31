@@ -45,7 +45,10 @@ export default function RegisterPage() {
       setShowOTP(true);
       toast.success('Verification OTP sent to your email');
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Registration failed');
+      const message = err?.code === 'ECONNABORTED'
+        ? 'Registration timed out while sending OTP. Please try again.'
+        : err?.response?.data?.detail || 'Registration failed. Please check your connection.';
+      toast.error(message);
     } finally {
       setLoading(false);
     }

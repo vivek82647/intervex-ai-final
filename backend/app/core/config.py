@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     GMAIL_USER: str = ""
     GMAIL_APP_PASSWORD: str = ""
     OTP_EXPIRE_MINUTES: int = 10
+    SMTP_TIMEOUT_SECONDS: int = 15
 
     # JWT
     JWT_SECRET_KEY: str = secrets.token_urlsafe(32)
