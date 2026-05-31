@@ -110,7 +110,7 @@ export default function QuestionBankPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const res = await questionApi.csvUpload(file);
+      const res = await questionApi.uploadCsv(file);
       toast.success(`Imported ${res.data.saved} questions`);
       if (res.data.errors?.length) toast.error(`${res.data.errors.length} rows had errors`);
       load();
