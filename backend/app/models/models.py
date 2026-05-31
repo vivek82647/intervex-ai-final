@@ -9,7 +9,6 @@ from sqlalchemy import (
     ForeignKey, Enum, UniqueConstraint, Index
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-# PostgreSQL UUID not needed for SQLite
 import enum
 
 from app.core.database import Base
@@ -148,18 +147,18 @@ class Question(Base):
     topic: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    options: Mapped[Optional[dict]] = mapped_column(JSON)  # For MCQ: [{id, text, is_correct}]
+    options: Mapped[Optional[dict]] = mapped_column(JSON)
     correct_answer: Mapped[Optional[str]] = mapped_column(Text)
     explanation: Mapped[Optional[str]] = mapped_column(Text)
     marks: Mapped[float] = mapped_column(Float, default=1.0)
     negative_marks: Mapped[float] = mapped_column(Float, default=0.0)
     time_limit_seconds: Mapped[Optional[int]] = mapped_column(Integer)
-    test_cases: Mapped[Optional[list]] = mapped_column(JSON)  # For coding
-    starter_code: Mapped[Optional[dict]] = mapped_column(JSON)  # {python: '', js: ''}
-    rubric: Mapped[Optional[dict]] = mapped_column(JSON)  # For descriptive AI eval
+    test_cases: Mapped[Optional[list]] = mapped_column(JSON)
+    starter_code: Mapped[Optional[dict]] = mapped_column(JSON)
+    rubric: Mapped[Optional[dict]] = mapped_column(JSON)
     tags: Mapped[Optional[list]] = mapped_column(JSON)
     is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
-    source: Mapped[str] = mapped_column(String(50), default="manual")  # manual, csv, ai
+    source: Mapped[str] = mapped_column(String(50), default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     admin: Mapped["Admin"] = relationship("Admin", back_populates="questions")
@@ -174,8 +173,7 @@ class Session(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     instructions: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Configuration
+
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     total_marks: Mapped[float] = mapped_column(Float, default=0.0)
     passing_marks: Mapped[Optional[float]] = mapped_column(Float)
@@ -183,21 +181,18 @@ class Session(Base):
     shuffle_options: Mapped[bool] = mapped_column(Boolean, default=True)
     show_result_immediately: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_review: Mapped[bool] = mapped_column(Boolean, default=False)
-    
-    # Anti-cheat
+
     max_warnings: Mapped[int] = mapped_column(Integer, default=3)
     fullscreen_required: Mapped[bool] = mapped_column(Boolean, default=True)
-    
-    # Access
+
     join_link: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     join_code: Mapped[str] = mapped_column(String(20))
     password: Mapped[Optional[str]] = mapped_column(String(255))
-    
-    # Status
+
     status: Mapped[str] = mapped_column(String(20), default="draft")
     scheduled_start: Mapped[Optional[datetime]] = mapped_column(DateTime)
     scheduled_end: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -227,31 +222,27 @@ class Attempt(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"), nullable=False, index=True)
     student_id: Mapped[str] = mapped_column(String(36), ForeignKey("students.id"), nullable=False, index=True)
-    
+
     status: Mapped[str] = mapped_column(String(20), default="not_started")
-    
+
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     time_taken_seconds: Mapped[Optional[int]] = mapped_column(Integer)
-    
-    # Scores
+
     total_score: Mapped[Optional[float]] = mapped_column(Float)
     max_score: Mapped[Optional[float]] = mapped_column(Float)
     percentage: Mapped[Optional[float]] = mapped_column(Float)
-    
-    # Anti-cheat
+
     warning_count: Mapped[int] = mapped_column(Integer, default=0)
     termination_reason: Mapped[Optional[str]] = mapped_column(String(255))
-    
-    # AI Evaluation
+
     ai_feedback: Mapped[Optional[dict]] = mapped_column(JSON)
     strengths: Mapped[Optional[list]] = mapped_column(JSON)
     weaknesses: Mapped[Optional[list]] = mapped_column(JSON)
-    
-    # Metadata
+
     ip_address: Mapped[Optional[str]] = mapped_column(String(50))
     user_agent: Mapped[Optional[str]] = mapped_column(Text)
-    question_order: Mapped[Optional[list]] = mapped_column(JSON)  # shuffled order for this student
+    question_order: Mapped[Optional[list]] = mapped_column(JSON)
 
     student: Mapped["Student"] = relationship("Student", back_populates="attempts")
     session: Mapped["Session"] = relationship("Session", back_populates="attempts")
@@ -265,27 +256,23 @@ class Answer(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     attempt_id: Mapped[str] = mapped_column(String(36), ForeignKey("attempts.id"), nullable=False, index=True)
     question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id"), nullable=False)
-    
-    # Answer content
-    selected_option: Mapped[Optional[str]] = mapped_column(String(36))  # MCQ option id
-    text_answer: Mapped[Optional[str]] = mapped_column(Text)  # Descriptive
-    code_answer: Mapped[Optional[str]] = mapped_column(Text)  # Coding
-    language: Mapped[Optional[str]] = mapped_column(String(50))  # Coding language
-    
-    # Scoring
+
+    selected_option: Mapped[Optional[str]] = mapped_column(String(36))
+    text_answer: Mapped[Optional[str]] = mapped_column(Text)
+    code_answer: Mapped[Optional[str]] = mapped_column(Text)
+    language: Mapped[Optional[str]] = mapped_column(String(50))
+
     marks_awarded: Mapped[Optional[float]] = mapped_column(Float)
     is_correct: Mapped[Optional[bool]] = mapped_column(Boolean)
-    
-    # AI Evaluation for descriptive
+
     ai_score: Mapped[Optional[float]] = mapped_column(Float)
     ai_feedback: Mapped[Optional[str]] = mapped_column(Text)
     ai_rubric_scores: Mapped[Optional[dict]] = mapped_column(JSON)
-    
-    # Code execution
+
     execution_result: Mapped[Optional[dict]] = mapped_column(JSON)
     test_cases_passed: Mapped[Optional[int]] = mapped_column(Integer)
     test_cases_total: Mapped[Optional[int]] = mapped_column(Integer)
-    
+
     answered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     time_spent_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
@@ -315,6 +302,7 @@ class Analytics(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 
 class OTPRecord(Base):
     __tablename__ = "otp_records"

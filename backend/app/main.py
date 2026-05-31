@@ -70,12 +70,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix="/api/v1")
+# ─── Routes ───────────────────────────────────────────────────────────────────
 
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/health")
+@app.get("/api/v1/health")  # Both routes work
 async def health_check():
     return {
         "status": "healthy",
@@ -85,5 +86,10 @@ async def health_check():
         "ai": "Groq (free)",
     }
 
+
+# ─── Socket.IO ASGI Wrapper ───────────────────────────────────────────────────
+# NOTE: socketio.ASGIApp wraps the FastAPI app.
+# Uvicorn ko 'asgi_app' run karna hai, 'app' nahi.
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 asgi_app = socket_app
