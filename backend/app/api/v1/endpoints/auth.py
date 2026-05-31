@@ -1,13 +1,3 @@
-"""
-UPDATED auth.py — Apne existing auth.py ko IS se REPLACE karo.
-
-Changes:
-- /auth/login → ab sirf OTP bhejta hai (token nahi deta)
-- /auth/verify-otp → OTP verify karke JWT token deta hai
-- /auth/register → registration ke baad OTP bhejta hai
-- /auth/verify-register-otp → registration OTP verify karta hai
-"""
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
@@ -15,13 +5,13 @@ from ..core.database import get_db
 from ..core.security import (
     verify_password, create_access_token, get_password_hash, get_current_user
 )
-from ..models.models import User
+from ..models.models import Admin as User
 from ..services.otp_service import create_otp, verify_otp
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# ─── Schemas ────────────────────────────────────────────────────────────────
+# ─── Schemas ─────────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -36,23 +26,23 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: str = "admin"  # "admin" ya "student"
+    role: str = "admin"
 
 class MessageResponse(BaseModel):
     message: str
     email: str = None
 
+class ResendOTPRequest(BaseModel):
+    email: EmailStr
+    purpose: str
 
-# ─── Step 1: Login — password check karo, OTP bhejo ────────────────────────
+
+# ─── Step 1: Login — password check, OTP bhejo ───────────────────────────────
 
 @router.post("/login", response_model=MessageResponse)
 def login_request_otp(data: LoginRequest, db: Session = Depends(get_db)):
-    """
-    Admin login - Step 1:
-    Password sahi hai toh OTP email pe bhejta hai.
-    """
     user = db.query(User).filter(User.email == data.email).first()
-    if not user or not verify_password(data.password, user.hashed_password):
+    if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ya password galat hai"
@@ -78,14 +68,10 @@ def login_request_otp(data: LoginRequest, db: Session = Depends(get_db)):
     }
 
 
-# ─── Step 2: OTP verify karo, JWT token lo ──────────────────────────────────
+# ─── Step 2: OTP verify, JWT token lo ────────────────────────────────────────
 
 @router.post("/verify-otp")
 def verify_login_otp(data: OTPVerifyRequest, db: Session = Depends(get_db)):
-    """
-    Admin login - Step 2:
-    OTP sahi hai toh JWT access token deta hai.
-    """
     if not verify_otp(db, data.email, data.otp, data.purpose):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -109,26 +95,21 @@ def verify_login_otp(data: OTPVerifyRequest, db: Session = Depends(get_db)):
     }
 
 
-# ─── Registration ────────────────────────────────────────────────────────────
+# ─── Registration ─────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=MessageResponse)
 def register_request_otp(data: RegisterRequest, db: Session = Depends(get_db)):
-    """
-    New account register - Step 1:
-    User details save karo (inactive), OTP bhejo.
-    """
     existing = db.query(User).filter(User.email == data.email).first()
     if existing:
         if existing.is_active:
             raise HTTPException(status_code=400, detail="Email already registered hai")
-        # Inactive user hai (OTP pending) — sirf OTP resend karo
     else:
         new_user = User(
             email=data.email,
-            hashed_password=get_password_hash(data.password),
+            password_hash=get_password_hash(data.password),
             full_name=data.full_name,
             role=data.role,
-            is_active=False  # OTP verify hone ke baad active hoga
+            is_active=False
         )
         db.add(new_user)
         db.commit()
@@ -146,10 +127,6 @@ def register_request_otp(data: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/verify-register-otp")
 def verify_register_otp(data: OTPVerifyRequest, db: Session = Depends(get_db)):
-    """
-    New account register - Step 2:
-    OTP verify karo, account activate karo, token do.
-    """
     if not verify_otp(db, data.email, data.otp, "register"):
         raise HTTPException(status_code=400, detail="OTP galat hai ya expire ho gaya")
 
@@ -173,15 +150,10 @@ def verify_register_otp(data: OTPVerifyRequest, db: Session = Depends(get_db)):
     }
 
 
-# ─── Resend OTP ──────────────────────────────────────────────────────────────
-
-class ResendOTPRequest(BaseModel):
-    email: EmailStr
-    purpose: str
+# ─── Resend OTP ───────────────────────────────────────────────────────────────
 
 @router.post("/resend-otp", response_model=MessageResponse)
 def resend_otp(data: ResendOTPRequest, db: Session = Depends(get_db)):
-    """OTP resend karta hai"""
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Email registered nahi hai")
@@ -194,7 +166,7 @@ def resend_otp(data: ResendOTPRequest, db: Session = Depends(get_db)):
     return {"message": f"OTP dobara bhej diya {data.email} pe.", "email": data.email}
 
 
-# ─── Me (current user) ───────────────────────────────────────────────────────
+# ─── Me ───────────────────────────────────────────────────────────────────────
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):
