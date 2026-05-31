@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import OTPModal from "@/components/shared/OTPModal";
+import { useAuthStore } from "@/store/auth.store";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { setUser, setTokens } = useAuthStore();
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -54,8 +56,8 @@ export default function LoginPage() {
     if (!res.ok) throw new Error(data.detail || "OTP galat hai");
 
     // Token save karo
-    localStorage.setItem("token", data.access_token);
-    localStorage.setItem("user", JSON.stringify(data.user));
+    setTokens(data.access_token, data.refresh_token);
+    setUser(data.user);
 
     // Dashboard pe redirect karo
     router.push("/admin/dashboard");

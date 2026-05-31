@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 from app.core.database import get_db
 from app.core.security import (
-    verify_password, create_access_token, hash_password, get_current_user
+    verify_password, create_access_token, create_refresh_token, decode_token,
+    hash_password, get_current_user
 )
 from app.models.models import Admin
 from app.services.otp_service import create_otp, verify_otp
@@ -27,7 +29,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: str = "admin"
+    organization: Optional[str] = None
 
 class MessageResponse(BaseModel):
     message: str
@@ -36,6 +38,9 @@ class MessageResponse(BaseModel):
 class ResendOTPRequest(BaseModel):
     email: EmailStr
     purpose: str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 # ─── Step 1: Login — password check, OTP bhejo ────────────────────────────────
@@ -87,9 +92,10 @@ async def verify_login_otp(data: OTPVerifyRequest, db: AsyncSession = Depends(ge
     if not user:
         raise HTTPException(status_code=404, detail="User nahi mila")
 
-    token = create_access_token({"sub": str(user.id), "role": user.role, "email": user.email})
+    token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
     return {
-        "access_token": token,
+        "access_token": create_access_token(token_data),
+        "refresh_token": create_refresh_token(token_data),
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -115,10 +121,17 @@ async def register_request_otp(data: RegisterRequest, db: AsyncSession = Depends
             email=data.email,
             password_hash=hash_password(data.password),
             full_name=data.full_name,
-            role=data.role,
+            organization=data.organization,
+            role="admin",
             is_active=False
         )
         db.add(new_user)
+        await db.commit()
+    if existing and not existing.is_active:
+        existing.password_hash = hash_password(data.password)
+        existing.full_name = data.full_name
+        existing.organization = data.organization
+        existing.role = "admin"
         await db.commit()
 
     try:
@@ -144,11 +157,13 @@ async def verify_register_otp(data: OTPVerifyRequest, db: AsyncSession = Depends
         raise HTTPException(status_code=404, detail="User nahi mila")
 
     user.is_active = True
+    user.is_verified = True
     await db.commit()
 
-    token = create_access_token({"sub": str(user.id), "role": user.role, "email": user.email})
+    token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
     return {
-        "access_token": token,
+        "access_token": create_access_token(token_data),
+        "refresh_token": create_refresh_token(token_data),
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -174,6 +189,21 @@ async def resend_otp(data: ResendOTPRequest, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": f"OTP dobara bhej diya {data.email} pe.", "email": data.email}
+
+
+@router.post("/refresh")
+async def refresh_access_token(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    payload = decode_token(data.refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    result = await db.execute(select(Admin).where(Admin.id == payload.get("sub")))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
+    return {"access_token": create_access_token(token_data), "token_type": "bearer"}
 
 
 # ─── Me ────────────────────────────────────────────────────────────────────────

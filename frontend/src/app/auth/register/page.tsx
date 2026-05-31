@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { Brain, Mail, Lock, User, Building2, ArrowRight } from 'lucide-react';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
+import OTPModal from '@/components/shared/OTPModal';
 
 const schema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -28,6 +29,8 @@ export default function RegisterPage() {
   const router = useRouter();
   const { setUser, setTokens } = useAuthStore();
   const [loading, setLoading] = useState(false);
+  const [showOTP, setShowOTP] = useState(false);
+  const [otpEmail, setOtpEmail] = useState('');
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -38,16 +41,31 @@ export default function RegisterPage() {
     try {
       const { confirm_password, ...payload } = data;
       const res = await authApi.adminRegister(payload);
-      const { access_token, refresh_token, user_id, email, full_name, role } = res.data;
-      setTokens(access_token, refresh_token);
-      setUser({ id: user_id, email, full_name, role });
-      toast.success('Account created! Welcome to INTERVEX AI');
-      router.push('/admin/dashboard');
+      setOtpEmail(res.data.email);
+      setShowOTP(true);
+      toast.success('Verification OTP sent to your email');
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Registration failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOTPVerify = async (otp: string) => {
+    const { data } = await authApi.verifyRegisterOtp({
+      email: otpEmail,
+      otp,
+      purpose: 'register',
+    });
+    setTokens(data.access_token, data.refresh_token);
+    setUser(data.user);
+    toast.success('Account verified! Welcome to INTERVEX AI');
+    router.push('/admin/dashboard');
+  };
+
+  const handleResend = async () => {
+    await authApi.resendOtp({ email: otpEmail, purpose: 'register' });
+    toast.success('Verification OTP sent again');
   };
 
   return (
@@ -131,6 +149,15 @@ export default function RegisterPage() {
           </div>
         </div>
       </motion.div>
+
+      <OTPModal
+        isOpen={showOTP}
+        email={otpEmail}
+        purpose="register"
+        onVerify={handleOTPVerify}
+        onResend={handleResend}
+        onClose={() => setShowOTP(false)}
+      />
     </div>
   );
 }
