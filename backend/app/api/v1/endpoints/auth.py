@@ -9,7 +9,7 @@ from app.core.security import (
 from app.models.models import Admin
 from app.services.otp_service import create_otp, verify_otp
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -181,36 +181,3 @@ async def resend_otp(data: ResendOTPRequest, db: AsyncSession = Depends(get_db))
 @router.get("/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
-
-
-# ─── Admin Alias Routes (frontend /auth/admin/* calls ke liye) ─────────────────
-# Frontend /api/v1/auth/admin/register aur /api/v1/auth/admin/login call karta hai
-
-@router.post("/admin/register", response_model=MessageResponse)
-async def admin_register_alias(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Alias for /register — frontend compatibility"""
-    return await register_request_otp(data, db)
-
-
-@router.post("/admin/login", response_model=MessageResponse)
-async def admin_login_alias(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Alias for /login — frontend compatibility"""
-    return await login_request_otp(data, db)
-
-
-@router.post("/admin/verify-otp")
-async def admin_verify_otp_alias(data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
-    """Alias for /verify-otp — frontend compatibility"""
-    return await verify_login_otp(data, db)
-
-
-@router.post("/admin/verify-register-otp")
-async def admin_verify_register_otp_alias(data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
-    """Alias for /verify-register-otp — frontend compatibility"""
-    return await verify_register_otp(data, db)
-
-
-@router.post("/admin/resend-otp", response_model=MessageResponse)
-async def admin_resend_otp_alias(data: ResendOTPRequest, db: AsyncSession = Depends(get_db)):
-    """Alias for /resend-otp — frontend compatibility"""
-    return await resend_otp(data, db)
