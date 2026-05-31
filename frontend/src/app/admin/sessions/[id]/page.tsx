@@ -5,9 +5,8 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft, Trash2, Copy, Eye, BarChart3, Zap, Clock,
-  BookOpen, Shield, Users, CheckCircle, Link as LinkIcon,
-  QrCode, Edit, Trash2
+  ArrowLeft, Copy, Eye, BarChart3, Zap, Clock,
+  BookOpen, Shield, Users, CheckCircle, Link as LinkIcon
 } from 'lucide-react';
 import { sessionApi } from '@/lib/api';
 import type { Session } from '@/types';
