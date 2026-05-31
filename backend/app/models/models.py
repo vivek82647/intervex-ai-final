@@ -318,10 +318,11 @@ class Analytics(Base):
 
 class OTPRecord(Base):
     __tablename__ = "otp_records"
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, nullable=False, index=True)
-    otp = Column(String(6), nullable=False)
-    purpose = Column(String, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    is_used = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    otp: Mapped[str] = mapped_column(String(6), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(100), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
