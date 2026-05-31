@@ -43,8 +43,16 @@ api.interceptors.response.use(
 );
 
 export const authApi = {
-  adminRegister: (data: any) => api.post('/auth/admin/register', data),
-  adminLogin: (data: any) => api.post('/auth/admin/login', data),
+  // ✅ Fixed: /auth/admin/register → /auth/register
+  adminRegister: (data: any) => api.post('/auth/register', data),
+  // ✅ Fixed: /auth/admin/login → /auth/login
+  adminLogin: (data: any) => api.post('/auth/login', data),
+  // OTP verify after register
+  verifyRegisterOtp: (data: any) => api.post('/auth/verify-register-otp', data),
+  // OTP verify after login
+  verifyLoginOtp: (data: any) => api.post('/auth/verify-otp', data),
+  // Resend OTP
+  resendOtp: (data: any) => api.post('/auth/resend-otp', data),
   studentJoin: (data: any) => api.post('/auth/student/join', data),
   getMe: () => api.get('/auth/me'),
   getSessionByLink: (link: string) => api.get(`/sessions/join/${link}`),
@@ -78,6 +86,14 @@ export const questionApi = {
     form.append('file', file);
     return api.post('/questions/csv-upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  extractUpload: (file: File, params: any) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/questions/extract-upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      params,
     });
   },
   delete: (id: string) => api.delete(`/questions/${id}`),
