@@ -20,8 +20,10 @@ class Settings(BaseSettings):
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_TIMEOUT_SECONDS: int = 15
-    SENDGRID_API_KEY: str = ""
-    EMAIL_FROM_ADDRESS: str = ""
+    MAILGUN_API_KEY: str = ""
+    MAILGUN_DOMAIN: str = ""
+    MAILGUN_FROM_ADDRESS: str = ""
+    MAILGUN_API_BASE_URL: str = "https://api.mailgun.net"
 
     # JWT
     JWT_SECRET_KEY: str = secrets.token_urlsafe(32)

@@ -2,11 +2,9 @@
 import random
 import string
 import asyncio
-import json
 from datetime import datetime, timedelta
 import smtplib
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+import httpx
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,37 +74,34 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
         return False
 
 
-def send_otp_email_via_sendgrid(to_email: str, otp: str, purpose: str = "login") -> bool:
-    from_email = settings.EMAIL_FROM_ADDRESS or settings.GMAIL_USER
-    payload = {
-        "personalizations": [{"to": [{"email": to_email}]}],
-        "from": {"email": from_email, "name": "INTERVEX AI"},
-        "subject": get_otp_subject(purpose),
-        "content": [{"type": "text/html", "value": get_otp_html(otp)}],
-    }
-    request = Request(
-        "https://api.sendgrid.com/v3/mail/send",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {settings.SENDGRID_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+def send_otp_email_via_mailgun(to_email: str, otp: str, purpose: str = "login") -> bool:
+    from_email = settings.MAILGUN_FROM_ADDRESS or f"INTERVEX AI <postmaster@{settings.MAILGUN_DOMAIN}>"
     try:
-        with urlopen(request, timeout=settings.SMTP_TIMEOUT_SECONDS) as response:
-            return response.status == 202
-    except HTTPError as e:
-        print(f"[SendGrid Email Error] HTTP {e.code}: {e.read().decode('utf-8', errors='replace')}")
+        response = httpx.post(
+            f"{settings.MAILGUN_API_BASE_URL}/v3/{settings.MAILGUN_DOMAIN}/messages",
+            auth=("api", settings.MAILGUN_API_KEY),
+            data={
+                "from": from_email,
+                "to": to_email,
+                "subject": get_otp_subject(purpose),
+                "html": get_otp_html(otp),
+            },
+            timeout=settings.SMTP_TIMEOUT_SECONDS,
+        )
+        if response.status_code == 200:
+            return True
+        print(f"[Mailgun Email Error] HTTP {response.status_code}: {response.text}")
         return False
-    except (URLError, TimeoutError) as e:
-        print(f"[SendGrid Email Error] {e}")
+    except httpx.HTTPError as e:
+        print(f"[Mailgun Email Error] {e}")
         return False
 
 
 async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
-    if settings.APP_ENV == "production" and not settings.SENDGRID_API_KEY:
-        raise Exception("Email delivery is not configured. Add SENDGRID_API_KEY and EMAIL_FROM_ADDRESS.")
+    if settings.APP_ENV == "production" and not (
+        settings.MAILGUN_API_KEY and settings.MAILGUN_DOMAIN
+    ):
+        raise Exception("Email delivery is not configured. Add MAILGUN_API_KEY and MAILGUN_DOMAIN.")
 
     # Remove previous OTPs for this purpose.
     await db.execute(
@@ -131,7 +126,11 @@ async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
     await db.commit()
 
     # Run the blocking email provider call in a worker thread.
-    send_email = send_otp_email_via_sendgrid if settings.SENDGRID_API_KEY else send_otp_email
+    send_email = (
+        send_otp_email_via_mailgun
+        if settings.MAILGUN_API_KEY and settings.MAILGUN_DOMAIN
+        else send_otp_email
+    )
     try:
         sent = await asyncio.wait_for(
             asyncio.to_thread(send_email, email, otp, purpose),
