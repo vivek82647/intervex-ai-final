@@ -211,3 +211,110 @@ async def refresh_access_token(data: RefreshTokenRequest, db: AsyncSession = Dep
 @router.get("/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
+
+
+# ─── Student Join (OTP-based) ─────────────────────────────────────────────────
+
+from app.models.models import Student, Session as DBSession
+import uuid as uuid_lib
+
+class StudentJoinRequest(BaseModel):
+    join_link: str
+    full_name: str
+    email: EmailStr
+    roll_number: Optional[str] = None
+    phone: Optional[str] = None
+
+class StudentJoinOTPVerify(BaseModel):
+    join_link: str
+    full_name: str
+    email: EmailStr
+    roll_number: Optional[str] = None
+    phone: Optional[str] = None
+    otp: str
+
+
+@router.post("/student/join/send-otp")
+async def student_join_send_otp(
+    data: StudentJoinRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Step 1: Validate session link and send OTP to student email."""
+    result = await db.execute(
+        select(DBSession).where(DBSession.join_link == data.join_link)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Invalid session link")
+    if session.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session is '{session.status}' — cannot join right now"
+        )
+
+    try:
+        await create_otp(db, data.email, purpose="test")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"message": f"OTP sent to {data.email}", "email": data.email}
+
+
+@router.post("/student/join")
+async def student_join_verify_otp(
+    data: StudentJoinOTPVerify,
+    db: AsyncSession = Depends(get_db)
+):
+    """Step 2: Verify OTP and issue student token."""
+    ok = await verify_otp(db, data.email, data.otp, purpose="test")
+    if not ok:
+        raise HTTPException(status_code=400, detail="OTP is incorrect or has expired")
+
+    result = await db.execute(
+        select(DBSession).where(DBSession.join_link == data.join_link)
+    )
+    session = result.scalar_one_or_none()
+    if not session or session.status != "active":
+        raise HTTPException(status_code=400, detail="Session is no longer available")
+
+    # Find or create student
+    result = await db.execute(
+        select(Student).where(
+            Student.admin_id == session.admin_id,
+            Student.email == data.email
+        )
+    )
+    student = result.scalar_one_or_none()
+
+    if not student:
+        student = Student(
+            id=str(uuid_lib.uuid4()),
+            admin_id=session.admin_id,
+            email=data.email,
+            full_name=data.full_name,
+            roll_number=data.roll_number,
+            phone=data.phone,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+    token_data = {
+        "sub": str(student.id),
+        "email": student.email,
+        "role": "student",
+        "session_id": session.id,
+        "admin_id": session.admin_id,
+    }
+
+    return {
+        "access_token": create_access_token(token_data),
+        "token_type": "bearer",
+        "role": "student",
+        "student_id": student.id,
+        "student_name": student.full_name,
+        "session_id": session.id,
+        "session_title": session.title,
+        "duration_minutes": session.duration_minutes,
+    }
