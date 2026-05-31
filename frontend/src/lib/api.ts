@@ -1,5 +1,7 @@
 /**
- * API Client - Fixed version with all methods
+ * API Client - Fixed version
+ * - Correct auth URLs (no /admin prefix)
+ * - 60 second timeout (Render cold start ke liye)
  */
 import axios, { AxiosError } from 'axios';
 import Cookies from 'js-cookie';
@@ -8,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://intervex-ai-final.on
 
 export const api = axios.create({
   baseURL: API_URL,
-  timeout: 30000,
+  timeout: 60000, // 60 sec — Render cold start handle karne ke liye
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -43,15 +45,10 @@ api.interceptors.response.use(
 );
 
 export const authApi = {
-  // ✅ Fixed: /auth/admin/register → /auth/register
-  adminRegister: (data: any) => api.post('/auth/register', data),
-  // ✅ Fixed: /auth/admin/login → /auth/login
-  adminLogin: (data: any) => api.post('/auth/login', data),
-  // OTP verify after register
+  adminRegister: (data: any) => api.post('/auth/register', data),         // ✅ fixed
+  adminLogin: (data: any) => api.post('/auth/login', data),               // ✅ fixed
   verifyRegisterOtp: (data: any) => api.post('/auth/verify-register-otp', data),
-  // OTP verify after login
   verifyLoginOtp: (data: any) => api.post('/auth/verify-otp', data),
-  // Resend OTP
   resendOtp: (data: any) => api.post('/auth/resend-otp', data),
   studentJoin: (data: any) => api.post('/auth/student/join', data),
   getMe: () => api.get('/auth/me'),
