@@ -9,7 +9,6 @@ import socketio
 
 logger = logging.getLogger(__name__)
 
-# Socket.IO server (async mode)
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",
@@ -17,26 +16,18 @@ sio = socketio.AsyncServer(
     engineio_logger=False,
 )
 
-# In-memory state (use Redis in production for multi-instance)
-# Format: {session_id: {student_id: {sid, status, ...}}}
 active_sessions: Dict[str, Dict] = {}
-# Format: {socket_id: {session_id, student_id or admin_id, role}}
 socket_users: Dict[str, Dict] = {}
-# Admin sockets watching sessions: {session_id: set of admin sids}
 admin_watchers: Dict[str, Set[str]] = {}
 
 
-# ─── Connection Events ────────────────────────────────────────────────────────
-
 @sio.event
 async def connect(sid, environ, auth):
-    """Handle new socket connection"""
     logger.info(f"Socket connected: {sid}")
 
 
 @sio.event
 async def disconnect(sid):
-    """Handle socket disconnection"""
     user_info = socket_users.pop(sid, None)
     
     if user_info:
@@ -62,8 +53,6 @@ async def disconnect(sid):
     logger.info(f"Socket disconnected: {sid}")
 
 
-# ─── Student Events ───────────────────────────────────────────────────────────
-
 @sio.event
 async def student_join(sid, data):
     """Student joins a session"""
@@ -71,22 +60,24 @@ async def student_join(sid, data):
     student_id = data.get("student_id")
     student_name = data.get("student_name")
     attempt_id = data.get("attempt_id")
+    ip_address = data.get("ip_address", "Unknown")      # ← NEW: IP from frontend
+    user_agent = data.get("user_agent", "")             # ← NEW: device info
     
     if not all([session_id, student_id, student_name]):
         await sio.emit("error", {"message": "Missing required fields"}, to=sid)
         return
 
-    # Track socket
     socket_users[sid] = {
         "session_id": session_id,
         "student_id": student_id,
         "student_name": student_name,
         "attempt_id": attempt_id,
+        "ip_address": ip_address,
+        "user_agent": user_agent,
         "role": "student",
         "joined_at": datetime.utcnow().isoformat()
     }
 
-    # Track in session
     if session_id not in active_sessions:
         active_sessions[session_id] = {}
     
@@ -94,6 +85,8 @@ async def student_join(sid, data):
         "sid": sid,
         "student_name": student_name,
         "attempt_id": attempt_id,
+        "ip_address": ip_address,           # ← NEW
+        "user_agent": user_agent,           # ← NEW
         "status": "joined",
         "connected": True,
         "warning_count": 0,
@@ -105,17 +98,17 @@ async def student_join(sid, data):
     await sio.enter_room(sid, f"session_{session_id}")
     await sio.emit("join_confirmed", {"session_id": session_id}, to=sid)
 
-    # Notify admins
     await notify_admins(session_id, "student_joined", {
         "student_id": student_id,
         "student_name": student_name,
+        "ip_address": ip_address,           # ← NEW
+        "user_agent": user_agent,           # ← NEW
         "timestamp": datetime.utcnow().isoformat()
     })
 
 
 @sio.event
 async def student_progress(sid, data):
-    """Update student progress"""
     user_info = socket_users.get(sid)
     if not user_info:
         return
@@ -139,7 +132,6 @@ async def student_progress(sid, data):
 
 @sio.event
 async def anti_cheat_warning(sid, data):
-    """Handle anti-cheat violation"""
     user_info = socket_users.get(sid)
     if not user_info:
         return
@@ -156,16 +148,15 @@ async def anti_cheat_warning(sid, data):
         warning_data = {
             "student_id": student_id,
             "student_name": user_info["student_name"],
+            "ip_address": user_info.get("ip_address", "Unknown"),   # ← NEW
             "type": warning_type,
             "count": warning_count,
             "details": data.get("details", {}),
             "timestamp": datetime.utcnow().isoformat()
         }
         
-        # Alert admins
         await notify_admins(session_id, "anti_cheat_alert", warning_data)
         
-        # Respond to student based on count
         max_warnings = data.get("max_warnings", 3)
         
         if warning_count == 1:
@@ -196,7 +187,6 @@ async def anti_cheat_warning(sid, data):
 
 @sio.event
 async def student_submitted(sid, data):
-    """Student submitted the test"""
     user_info = socket_users.get(sid)
     if not user_info:
         return
@@ -219,11 +209,8 @@ async def student_submitted(sid, data):
     })
 
 
-# ─── Admin Events ─────────────────────────────────────────────────────────────
-
 @sio.event
 async def admin_watch(sid, data):
-    """Admin starts watching a session"""
     session_id = data.get("session_id")
     admin_id = data.get("admin_id")
     
@@ -242,7 +229,6 @@ async def admin_watch(sid, data):
 
     await sio.enter_room(sid, f"admin_{session_id}")
 
-    # Send current state
     session_data = active_sessions.get(session_id, {})
     students_snapshot = [
         {
@@ -261,7 +247,6 @@ async def admin_watch(sid, data):
 
 @sio.event
 async def admin_terminate_student(sid, data):
-    """Admin manually terminates a student's session"""
     session_id = data.get("session_id")
     student_id = data.get("student_id")
     reason = data.get("reason", "Terminated by admin")
@@ -276,10 +261,7 @@ async def admin_terminate_student(sid, data):
         active_sessions[session_id][student_id]["status"] = "terminated"
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
 async def notify_admins(session_id: str, event: str, data: dict):
-    """Send event to all admin watchers of a session"""
     watchers = admin_watchers.get(session_id, set())
     if watchers:
         await sio.emit(event, data, room=f"admin_{session_id}")

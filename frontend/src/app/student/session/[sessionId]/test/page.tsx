@@ -133,7 +133,19 @@ export default function TestPage() {
       auth: { token: Cookies.get('access_token') },
       transports: ['websocket'],
     });
-    socket.on('connect', () => socket.emit('student_join', { session_id: sessionId, student_id: studentId, student_name: studentName, attempt_id: attemptId }));
+    socket.on('connect', async () => {
+      // Fetch public IP before joining
+      let ip = 'Unknown';
+      try { const r = await fetch('https://api.ipify.org?format=json'); const d = await r.json(); ip = d.ip; } catch {}
+      socket.emit('student_join', {
+        session_id: sessionId,
+        student_id: studentId,
+        student_name: studentName,
+        attempt_id: attemptId,
+        ip_address: ip,
+        user_agent: navigator.userAgent,
+      });
+    });
     socket.on('warning_issued', ({ count, message }: any) => { setWarningCount(count); toast.error(message, { duration: 4000 }); });
     socket.on('session_terminated', ({ reason }: any) => { toast.error(`Terminated: ${reason}`, { duration: 0 }); router.push(`/student/result?terminated=true`); });
     socketRef.current = socket;
