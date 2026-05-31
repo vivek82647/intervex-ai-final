@@ -9,8 +9,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from sqlalchemy.orm import Session
-from ..models.models import OTPRecord
-from ..core.config import settings
+from app.models.models import OTPRecord
+from app.core.config import settings
 
 
 def generate_otp(length: int = 6) -> str:
