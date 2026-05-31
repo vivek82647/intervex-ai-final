@@ -92,9 +92,9 @@ export default function CreateSessionPage() {
     <div className="max-w-4xl mx-auto">
       <div className="page-header">
         <div className="flex items-center gap-3">
-          <Link href="/admin/sessions" className="text-white/40 hover:text-white p-1">
+          <button type="button" onClick={() => router.push('/admin/sessions')} className="text-white/40 hover:text-white p-1">
             <ArrowLeft className="w-5 h-5" />
-          </Link>
+          </button>
           <div>
             <h1 className="section-title">Create Session</h1>
             <p className="text-white/40 text-sm mt-0.5">Configure your interview session</p>
@@ -211,9 +211,24 @@ export default function CreateSessionPage() {
                   <BookOpen className="w-4 h-4 text-brand-400" />
                   Select Questions ({selectedQIds.length} selected)
                 </h2>
-                <Link href="/admin/questions" target="_blank" className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1">
-                  <Plus className="w-3 h-3" /> Add to Bank
-                </Link>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedQIds.length === questions.length) {
+                        setSelectedQIds([]);
+                      } else {
+                        setSelectedQIds(questions.map((q: any) => q.id));
+                      }
+                    }}
+                    className="text-xs text-brand-400 hover:text-brand-300 border border-brand-500/30 px-2 py-1 rounded-lg"
+                  >
+                    {selectedQIds.length === questions.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  <Link href="/admin/questions" target="_blank" className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1">
+                    <Plus className="w-3 h-3" /> Add to Bank
+                  </Link>
+                </div>
               </div>
 
               {/* Search */}
