@@ -147,6 +147,8 @@ export interface LiveStudent {
   connected: boolean;
   joined_at?: string;
   last_activity?: string;
+  ip_address?: string;   // ← NEW
+  user_agent?: string;   // ← NEW
 }
 
 export interface AnswerDraft {
