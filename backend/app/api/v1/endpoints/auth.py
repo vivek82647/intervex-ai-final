@@ -1,167 +1,206 @@
 """
-Auth Endpoints - Admin & Student authentication
+UPDATED auth.py — Apne existing auth.py ko IS se REPLACE karo.
+
+Changes:
+- /auth/login → ab sirf OTP bhejta hai (token nahi deta)
+- /auth/verify-otp → OTP verify karke JWT token deta hai
+- /auth/register → registration ke baad OTP bhejta hai
+- /auth/verify-register-otp → registration OTP verify karta hai
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from app.core.database import get_db
-from app.core.security import (
-    hash_password, verify_password,
-    create_access_token, create_refresh_token, decode_token,
-    get_current_user
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, EmailStr
+from ..core.database import get_db
+from ..core.security import (
+    verify_password, create_access_token, get_password_hash, get_current_user
 )
-from app.models.models import Admin, Student, Session as DBSession
-from app.schemas.schemas import (
-    AdminRegister, AdminLogin, TokenResponse, StudentJoin
-)
-import uuid
+from ..models.models import User
+from ..services.otp_service import create_otp, verify_otp
 
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/admin/register", response_model=TokenResponse)
-async def admin_register(
-    data: AdminRegister,
-    db: AsyncSession = Depends(get_db)
-):
-    """Register a new admin account"""
-    # Check if email exists
-    result = await db.execute(select(Admin).where(Admin.email == data.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
+# ─── Schemas ────────────────────────────────────────────────────────────────
 
-    admin = Admin(
-        id=str(uuid.uuid4()),
-        email=data.email,
-        password_hash=hash_password(data.password),
-        full_name=data.full_name,
-        organization=data.organization,
-        role="admin",
-        is_verified=True,  # Auto-verify for now; add email verification later
-    )
-    db.add(admin)
-    await db.commit()
-    await db.refresh(admin)
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
-    token_data = {"sub": admin.id, "email": admin.email, "role": admin.role}
-    return TokenResponse(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
-        role=admin.role,
-        user_id=admin.id,
-        email=admin.email,
-        full_name=admin.full_name
-    )
+class OTPVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    purpose: str = "login"
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    role: str = "admin"  # "admin" ya "student"
+
+class MessageResponse(BaseModel):
+    message: str
+    email: str = None
 
 
-@router.post("/admin/login", response_model=TokenResponse)
-async def admin_login(
-    data: AdminLogin,
-    db: AsyncSession = Depends(get_db)
-):
-    """Admin login with email/password"""
-    result = await db.execute(select(Admin).where(Admin.email == data.email))
-    admin = result.scalar_one_or_none()
-    
-    if not admin or not verify_password(data.password, admin.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    
-    if not admin.is_active:
-        raise HTTPException(status_code=403, detail="Account deactivated")
+# ─── Step 1: Login — password check karo, OTP bhejo ────────────────────────
 
-    token_data = {"sub": admin.id, "email": admin.email, "role": admin.role}
-    return TokenResponse(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
-        role=admin.role,
-        user_id=admin.id,
-        email=admin.email,
-        full_name=admin.full_name
-    )
-
-
-@router.post("/student/join")
-async def student_join(
-    data: StudentJoin,
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-):
-    """Student joins a session via link"""
-    # Find session by join link
-    result = await db.execute(
-        select(DBSession).where(DBSession.join_link == data.join_link)
-    )
-    session = result.scalar_one_or_none()
-    
-    if not session:
-        raise HTTPException(status_code=404, detail="Invalid session link")
-    
-    if session.status != "active":
+@router.post("/login", response_model=MessageResponse)
+def login_request_otp(data: LoginRequest, db: Session = Depends(get_db)):
+    """
+    Admin login - Step 1:
+    Password sahi hai toh OTP email pe bhejta hai.
+    """
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(
-            status_code=400,
-            detail=f"Session is {session.status}. Cannot join."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ya password galat hai"
         )
 
-    # Find or create student record under this admin
-    result = await db.execute(
-        select(Student).where(
-            Student.admin_id == session.admin_id,
-            Student.email == data.email
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account inactive hai"
         )
-    )
-    student = result.scalar_one_or_none()
 
-    if not student:
-        student = Student(
-            id=str(uuid.uuid4()),
-            admin_id=session.admin_id,
-            email=data.email,
-            full_name=data.full_name,
-            roll_number=data.roll_number,
-            phone=data.phone,
+    try:
+        create_otp(db, data.email, purpose="login")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
-        db.add(student)
-        await db.commit()
-        await db.refresh(student)
 
-    # Create student token
-    token_data = {
-        "sub": student.id,
-        "email": student.email,
-        "role": "student",
-        "session_id": session.id,
-        "admin_id": session.admin_id
-    }
-    
     return {
-        "access_token": create_access_token(token_data),
-        "token_type": "bearer",
-        "role": "student",
-        "student_id": student.id,
-        "student_name": student.full_name,
-        "session_id": session.id,
-        "session_title": session.title,
-        "duration_minutes": session.duration_minutes,
+        "message": f"OTP bhej diya gaya hai {data.email} pe. 10 minutes mein enter karo.",
+        "email": data.email
     }
 
 
-@router.post("/refresh")
-async def refresh_token(data: dict, db: AsyncSession = Depends(get_db)):
-    """Refresh access token"""
-    token = data.get("refresh_token")
-    if not token:
-        raise HTTPException(status_code=400, detail="Refresh token required")
-    
-    payload = decode_token(token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=400, detail="Invalid token type")
-    
-    new_token_data = {"sub": payload["sub"], "email": payload.get("email"), "role": payload.get("role")}
-    return {"access_token": create_access_token(new_token_data), "token_type": "bearer"}
+# ─── Step 2: OTP verify karo, JWT token lo ──────────────────────────────────
 
+@router.post("/verify-otp")
+def verify_login_otp(data: OTPVerifyRequest, db: Session = Depends(get_db)):
+    """
+    Admin login - Step 2:
+    OTP sahi hai toh JWT access token deta hai.
+    """
+    if not verify_otp(db, data.email, data.otp, data.purpose):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP galat hai ya expire ho gaya"
+        )
+
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User nahi mila")
+
+    token = create_access_token({"sub": str(user.id), "role": user.role})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role
+        }
+    }
+
+
+# ─── Registration ────────────────────────────────────────────────────────────
+
+@router.post("/register", response_model=MessageResponse)
+def register_request_otp(data: RegisterRequest, db: Session = Depends(get_db)):
+    """
+    New account register - Step 1:
+    User details save karo (inactive), OTP bhejo.
+    """
+    existing = db.query(User).filter(User.email == data.email).first()
+    if existing:
+        if existing.is_active:
+            raise HTTPException(status_code=400, detail="Email already registered hai")
+        # Inactive user hai (OTP pending) — sirf OTP resend karo
+    else:
+        new_user = User(
+            email=data.email,
+            hashed_password=get_password_hash(data.password),
+            full_name=data.full_name,
+            role=data.role,
+            is_active=False  # OTP verify hone ke baad active hoga
+        )
+        db.add(new_user)
+        db.commit()
+
+    try:
+        create_otp(db, data.email, purpose="register")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "message": f"Verification OTP bhej diya {data.email} pe.",
+        "email": data.email
+    }
+
+
+@router.post("/verify-register-otp")
+def verify_register_otp(data: OTPVerifyRequest, db: Session = Depends(get_db)):
+    """
+    New account register - Step 2:
+    OTP verify karo, account activate karo, token do.
+    """
+    if not verify_otp(db, data.email, data.otp, "register"):
+        raise HTTPException(status_code=400, detail="OTP galat hai ya expire ho gaya")
+
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User nahi mila")
+
+    user.is_active = True
+    db.commit()
+
+    token = create_access_token({"sub": str(user.id), "role": user.role})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role
+        }
+    }
+
+
+# ─── Resend OTP ──────────────────────────────────────────────────────────────
+
+class ResendOTPRequest(BaseModel):
+    email: EmailStr
+    purpose: str
+
+@router.post("/resend-otp", response_model=MessageResponse)
+def resend_otp(data: ResendOTPRequest, db: Session = Depends(get_db)):
+    """OTP resend karta hai"""
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Email registered nahi hai")
+
+    try:
+        create_otp(db, data.email, data.purpose)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"message": f"OTP dobara bhej diya {data.email} pe.", "email": data.email}
+
+
+# ─── Me (current user) ───────────────────────────────────────────────────────
 
 @router.get("/me")
-async def get_me(current_user: dict = Depends(get_current_user)):
-    """Get current user info"""
-    return current_user
+def get_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "role": current_user.role
+    }

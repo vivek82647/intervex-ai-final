@@ -1,182 +1,211 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import toast from 'react-hot-toast';
-import { Brain, User, Mail, Hash, Phone, Clock, BookOpen, AlertCircle, ArrowRight } from 'lucide-react';
-import { authApi } from '@/lib/api';
-import { useStudentStore } from '@/store/auth.store';
-import Cookies from 'js-cookie';
+"use client";
 
-const schema = z.object({
-  full_name: z.string().min(2, 'Name required'),
-  email: z.string().email('Valid email required'),
-  roll_number: z.string().min(1, 'Roll number is required'),
-  phone: z.string().optional(),
-});
+import { useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import OTPModal from "@/components/shared/OTPModal";
 
-type FormData = z.infer<typeof schema>;
-
-export default function JoinPage() {
-  const params = useParams();
-  const joinLink = params.link as string;
+export default function StudentJoinPage() {
   const router = useRouter();
-  const { setSession } = useStudentStore();
+  const params = useParams();
+  const sessionLink = params.link as string;
 
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [joining, setJoining] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    roll_number: "",
+  });
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) });
+  // OTP state
+  const [showOTP, setShowOTP] = useState(false);
+  const [otpEmail, setOtpEmail] = useState("");
 
-  useEffect(() => {
-    authApi.getSessionByLink(joinLink).then(r => {
-      setSessionInfo(r.data);
-    }).catch(() => {
-      toast.error('Invalid or expired session link');
-    }).finally(() => setLoading(false));
-  }, [joinLink]);
+  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-  const onSubmit = async (data: FormData) => {
-    setJoining(true);
+  // Step 1: Form submit → session validate karo → OTP bhejo
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
     try {
-      const res = await authApi.studentJoin({ join_link: joinLink, ...data });
-      const { access_token, student_id, student_name, session_id, session_title } = res.data;
+      // Pehle session validate karo (link se session ID lo)
+      const sessionRes = await fetch(`${API}/sessions/by-link/${sessionLink}`);
+      if (!sessionRes.ok) {
+        throw new Error("Invalid test link. Admin se contact karo.");
+      }
+      const sessionData = await sessionRes.json();
+      setSessionId(sessionData.id);
 
-      Cookies.set('access_token', access_token, { expires: 1 });
-      setSession({ studentId: student_id, studentName: student_name, sessionId: session_id, sessionTitle: session_title, token: access_token });
+      // OTP request bhejo
+      const otpRes = await fetch(`${API}/students/request-test-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          roll_number: form.roll_number,
+          session_id: sessionData.id,
+        }),
+      });
 
-      router.push(`/student/session/${session_id}/instructions`);
+      const otpData = await otpRes.json();
+      if (!otpRes.ok) throw new Error(otpData.detail || "OTP nahi bhej sake");
+
+      setOtpEmail(form.email);
+      setShowOTP(true);
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to join session');
+      setError(err.message);
     } finally {
-      setJoining(false);
+      setLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // Step 2: OTP verify → test instructions page pe bhejo
+  const handleOTPVerify = async (otp: string) => {
+    const res = await fetch(`${API}/students/verify-test-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: form.email,
+        otp,
+        session_id: sessionId,
+        name: form.name,
+        roll_number: form.roll_number,
+      }),
+    });
 
-  if (!sessionInfo) {
-    return (
-      <div className="min-h-screen bg-surface grid-bg flex items-center justify-center p-4">
-        <div className="glass-card p-10 text-center max-w-md">
-          <AlertCircle className="w-12 h-12 text-accent-rose mx-auto mb-4" />
-          <h1 className="font-display text-xl font-bold text-white mb-2">Session Not Found</h1>
-          <p className="text-white/40 text-sm">This link may be invalid or expired.</p>
-        </div>
-      </div>
-    );
-  }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "OTP galat hai");
 
-  if (sessionInfo.status !== 'active') {
-    return (
-      <div className="min-h-screen bg-surface grid-bg flex items-center justify-center p-4">
-        <div className="glass-card p-10 text-center max-w-md">
-          <AlertCircle className="w-12 h-12 text-accent-amber mx-auto mb-4" />
-          <h1 className="font-display text-xl font-bold text-white mb-2">Session {sessionInfo.status}</h1>
-          <p className="text-white/40 text-sm capitalize">This session is currently {sessionInfo.status} and cannot be joined.</p>
-        </div>
-      </div>
+    // Student info session storage mein save karo
+    sessionStorage.setItem(
+      "student_info",
+      JSON.stringify(data.student_info)
     );
-  }
+
+    // Instructions page pe bhejo
+    router.push(`/student/session/${sessionId}/instructions`);
+  };
+
+  // OTP resend
+  const handleResend = async () => {
+    const res = await fetch(`${API}/students/request-test-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.name,
+        email: form.email,
+        roll_number: form.roll_number,
+        session_id: sessionId,
+      }),
+    });
+    if (!res.ok) throw new Error("Resend failed");
+  };
 
   return (
-    <div className="min-h-screen bg-surface grid-bg flex items-center justify-center p-4">
-      <div className="fixed top-1/3 -left-40 w-80 h-80 bg-brand-500/10 rounded-full blur-3xl pointer-events-none" />
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md"
-      >
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-900 flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
         {/* Header */}
-        <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-cyan flex items-center justify-center mx-auto mb-4 shadow-[0_0_30px_rgba(91,106,245,0.4)]">
-            <Brain className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="font-display text-2xl font-bold text-white">{sessionInfo.title}</h1>
-          <p className="text-white/40 text-sm mt-1">INTERVEX AI Assessment</p>
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-black text-white tracking-tight">
+            INTERVEX <span className="text-indigo-400">AI</span>
+          </h1>
+          <p className="text-slate-400 mt-2 text-sm">Test Join Karo</p>
         </div>
 
-        {/* Session info */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="glass-card p-3 text-center">
-            <Clock className="w-4 h-4 text-accent-amber mx-auto mb-1" />
-            <div className="text-sm font-semibold text-white">{sessionInfo.duration_minutes} min</div>
-            <div className="text-xs text-white/30">Duration</div>
-          </div>
-          <div className="glass-card p-3 text-center">
-            <BookOpen className="w-4 h-4 text-brand-400 mx-auto mb-1" />
-            <div className="text-sm font-semibold text-white">{sessionInfo.total_marks} marks</div>
-            <div className="text-xs text-white/30">Total Marks</div>
-          </div>
-        </div>
+        {/* Form Card */}
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            Apni Details Bharo
+          </h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Email verify hone ke baad test shuru hoga
+          </p>
 
-        {/* Form */}
-        <div className="glass-card p-6">
-          <h2 className="font-display font-semibold text-white mb-5">Enter Your Details</h2>
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-white/60 mb-2">Full Name *</label>
-              <div className="relative">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input {...register('full_name')} placeholder="Your full name" className="input-field pl-10" />
-              </div>
-              {errors.full_name && <p className="text-accent-rose text-xs mt-1">{errors.full_name.message}</p>}
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Poora Naam *
+              </label>
+              <input
+                type="text"
+                required
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Apna naam likhein"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
+              />
             </div>
 
             <div>
-              <label className="block text-sm text-white/60 mb-2">Email Address *</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input {...register('email')} type="email" placeholder="you@college.edu" className="input-field pl-10" />
-              </div>
-              {errors.email && <p className="text-accent-rose text-xs mt-1">{errors.email.message}</p>}
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address *
+              </label>
+              <input
+                type="email"
+                required
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="aapka@email.com"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                📧 OTP iss email pe aayega
+              </p>
             </div>
 
             <div>
-              <label className="block text-sm text-white/60 mb-2">Roll Number *</label>
-              <div className="relative">
-                <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input {...register('roll_number')} placeholder="e.g. CS2021042" className="input-field pl-10" />
-              </div>
-              {errors.roll_number && <p className="text-accent-rose text-xs mt-1">{errors.roll_number.message}</p>}
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Roll Number (Optional)
+              </label>
+              <input
+                type="text"
+                value={form.roll_number}
+                onChange={(e) =>
+                  setForm({ ...form, roll_number: e.target.value })
+                }
+                placeholder="Jaise: 2021CS001"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
+              />
             </div>
 
-            <div>
-              <label className="block text-sm text-white/60 mb-2">Phone <span className="text-white/30">(optional)</span></label>
-              <div className="relative">
-                <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input {...register('phone')} placeholder="+91 9876543210" className="input-field pl-10" />
-              </div>
-            </div>
-
-            {sessionInfo.fullscreen_required && (
-              <div className="p-3 rounded-xl bg-accent-amber/10 border border-accent-amber/20 text-xs text-accent-amber flex items-start gap-2">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                <span>This test requires fullscreen mode. Your activity will be monitored for anti-cheat compliance.</span>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                ❌ {error}
               </div>
             )}
 
-            <button type="submit" disabled={joining} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
-              {joining
-                ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <><span>Join Session</span> <ArrowRight className="w-4 h-4" /></>
-              }
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold
+                hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
+                transition-all shadow-md hover:shadow-lg mt-2"
+            >
+              {loading ? "OTP bheja ja raha hai..." : "OTP Lao & Test Shuru Karo →"}
             </button>
           </form>
+
+          <div className="mt-4 bg-indigo-50 rounded-xl p-3">
+            <p className="text-xs text-indigo-700 text-center">
+              🔐 Aapki email pe 6-digit OTP aayega. Verify karne ke baad hi test shuru hoga.
+            </p>
+          </div>
         </div>
-      </motion.div>
+      </div>
+
+      {/* OTP Modal */}
+      <OTPModal
+        isOpen={showOTP}
+        email={otpEmail}
+        purpose="test"
+        onVerify={handleOTPVerify}
+        onResend={handleResend}
+        onClose={() => setShowOTP(false)}
+      />
     </div>
   );
 }

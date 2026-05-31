@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = secrets.token_urlsafe(32)
 
+        # Email (using Gmail SMTP for simplicity)
+    GMAIL_USER: str = ""
+    GMAIL_APP_PASSWORD: str = ""
+    OTP_EXPIRE_MINUTES: int = 10    
+
     # JWT
     JWT_SECRET_KEY: str = secrets.token_urlsafe(32)
     JWT_ALGORITHM: str = "HS256"

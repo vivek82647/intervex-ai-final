@@ -315,3 +315,13 @@ class Analytics(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class OTPRecord(Base):
+    __tablename__ = "otp_records"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    otp = Column(String(6), nullable=False)
+    purpose = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
