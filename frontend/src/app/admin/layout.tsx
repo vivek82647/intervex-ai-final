@@ -7,12 +7,13 @@ import {
   Brain, LayoutDashboard, Users, BookOpen, PlayCircle,
   BarChart3, Settings, LogOut, ChevronLeft, ChevronRight,
   GraduationCap, Zap, Menu, X
-} from 'lucide-react';
+, FileEdit } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 
 const navItems = [
   { href: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/admin/sessions', icon: PlayCircle, label: 'Sessions' },
+  { href: '/admin/test-builder', icon: FileEdit, label: 'Test Builder' },
   { href: '/admin/questions', icon: BookOpen, label: 'Question Bank' },
   { href: '/admin/students', icon: GraduationCap, label: 'Students' },
   { href: '/admin/classes', icon: Users, label: 'Classes' },
