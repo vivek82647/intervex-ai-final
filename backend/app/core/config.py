@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     GMAIL_USER: str = ""
     GMAIL_APP_PASSWORD: str = ""
     OTP_EXPIRE_MINUTES: int = 10
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
     SMTP_TIMEOUT_SECONDS: int = 15
 
     # JWT

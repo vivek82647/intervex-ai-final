@@ -1,6 +1,4 @@
-"""
-OTP Service - Gmail SMTP ke zariye OTP bhejta hai (Async version)
-"""
+"""Send OTP emails through Gmail SMTP."""
 import random
 import string
 import asyncio
@@ -34,15 +32,15 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
                       padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <h2 style="color: #1a1a2e; margin-bottom: 5px;">INTERVEX AI</h2>
             <hr style="border: 1px solid #eee; margin-bottom: 20px;">
-            <p style="color: #555; font-size: 15px;">Aapka One-Time Password (OTP):</p>
+            <p style="color: #555; font-size: 15px;">Your One-Time Password (OTP):</p>
             <div style="background: #1a1a2e; color: #fff; font-size: 36px; font-weight: bold;
                         letter-spacing: 12px; text-align: center; padding: 20px; border-radius: 8px;
                         margin: 20px 0;">
               {otp}
             </div>
             <p style="color: #888; font-size: 13px;">
-              Yeh OTP sirf <strong>10 minutes</strong> ke liye valid hai.<br>
-              Kisi ke saath share mat karein.
+              This OTP is valid for <strong>10 minutes</strong>.<br>
+              Do not share it with anyone.
             </p>
           </div>
         </body>
@@ -55,11 +53,12 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
         msg["To"] = to_email
         msg.attach(MIMEText(body, "html"))
 
-        with smtplib.SMTP_SSL(
-            "smtp.gmail.com",
-            465,
+        with smtplib.SMTP(
+            settings.SMTP_HOST,
+            settings.SMTP_PORT,
             timeout=settings.SMTP_TIMEOUT_SECONDS,
         ) as server:
+            server.starttls()
             server.login(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
             server.sendmail(settings.GMAIL_USER, to_email, msg.as_string())
 
@@ -71,7 +70,7 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
 
 
 async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
-    # Purane OTPs delete karo
+    # Remove previous OTPs for this purpose.
     await db.execute(
         delete(OTPRecord).where(
             OTPRecord.email == email,
@@ -93,16 +92,16 @@ async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
     db.add(record)
     await db.commit()
 
-    # Email bhejo (blocking call ko thread mein chalao)
+    # Run the blocking SMTP call in a worker thread.
     try:
         sent = await asyncio.wait_for(
             asyncio.to_thread(send_otp_email, email, otp, purpose),
             timeout=settings.SMTP_TIMEOUT_SECONDS + 5,
         )
     except asyncio.TimeoutError:
-        raise Exception("OTP email service timed out. Dobara try karo.")
+        raise Exception("OTP email service timed out. Please try again.")
     if not sent:
-        raise Exception("OTP email nahi bhej sake. GMAIL_USER aur GMAIL_APP_PASSWORD check karo.")
+        raise Exception("Unable to send the OTP email. Check the email service configuration.")
 
     return otp
 

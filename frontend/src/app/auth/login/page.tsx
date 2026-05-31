@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-  // Step 1: Password check → OTP bhejo
+  // Step 1: Validate the password and send an OTP.
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -35,7 +35,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Login failed");
 
-      // OTP bhej diya — modal dikhao
+      // Show the OTP modal after the email has been sent.
       setOtpEmail(form.email);
       setShowOTP(true);
     } catch (err: any) {
@@ -49,7 +49,7 @@ export default function LoginPage() {
     }
   };
 
-  // Step 2: OTP verify → JWT token lo
+  // Step 2: Verify the OTP and store the JWT tokens.
   const handleOTPVerify = async (otp: string) => {
     const res = await fetch(`${API}/auth/verify-otp`, {
       method: "POST",
@@ -58,13 +58,13 @@ export default function LoginPage() {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "OTP galat hai");
+    if (!res.ok) throw new Error(data.detail || "The OTP is incorrect");
 
-    // Token save karo
+    // Save the authenticated session.
     setTokens(data.access_token, data.refresh_token);
     setUser(data.user);
 
-    // Dashboard pe redirect karo
+    // Redirect to the dashboard.
     router.push("/admin/dashboard");
   };
 
@@ -117,14 +117,14 @@ export default function LoginPage() {
                 required
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="••••••••"
+                placeholder="********"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
               />
             </div>
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                ❌ {error}
+                {error}
               </div>
             )}
 
@@ -135,12 +135,12 @@ export default function LoginPage() {
                 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
                 transition-all shadow-md hover:shadow-lg mt-2"
             >
-              {loading ? "Check ho raha hai..." : "Login Karo →"}
+              {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
 
           <p className="text-xs text-gray-400 text-center mt-4">
-            🔐 Login ke baad aapke email pe OTP aayega
+            We will send an OTP to your email after you sign in.
           </p>
         </div>
       </div>

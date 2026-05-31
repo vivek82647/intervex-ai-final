@@ -43,7 +43,7 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-# ─── Step 1: Login — password check, OTP bhejo ────────────────────────────────
+# ─── Step 1: Login — validate password and send OTP ──────────────────────────
 
 @router.post("/login", response_model=MessageResponse)
 async def login_request_otp(data: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -53,13 +53,13 @@ async def login_request_otp(data: LoginRequest, db: AsyncSession = Depends(get_d
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ya password galat hai"
+            detail="Incorrect email or password"
         )
 
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account inactive hai"
+            detail="Account is inactive"
         )
 
     try:
@@ -71,12 +71,12 @@ async def login_request_otp(data: LoginRequest, db: AsyncSession = Depends(get_d
         )
 
     return {
-        "message": f"OTP bhej diya gaya hai {data.email} pe. 10 minutes mein enter karo.",
+        "message": f"An OTP was sent to {data.email}. Enter it within 10 minutes.",
         "email": data.email
     }
 
 
-# ─── Step 2: OTP verify, JWT token lo ─────────────────────────────────────────
+# ─── Step 2: Verify OTP and issue JWT tokens ─────────────────────────────────
 
 @router.post("/verify-otp")
 async def verify_login_otp(data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
@@ -84,13 +84,13 @@ async def verify_login_otp(data: OTPVerifyRequest, db: AsyncSession = Depends(ge
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP galat hai ya expire ho gaya"
+            detail="The OTP is incorrect or has expired"
         )
 
     result = await db.execute(select(Admin).where(Admin.email == data.email))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=404, detail="User nahi mila")
+        raise HTTPException(status_code=404, detail="User not found")
 
     token_data = {"sub": str(user.id), "role": user.role, "email": user.email}
     return {
@@ -115,7 +115,7 @@ async def register_request_otp(data: RegisterRequest, db: AsyncSession = Depends
 
     if existing:
         if existing.is_active:
-            raise HTTPException(status_code=400, detail="Email already registered hai")
+            raise HTTPException(status_code=400, detail="Email is already registered")
     else:
         new_user = Admin(
             email=data.email,
@@ -140,7 +140,7 @@ async def register_request_otp(data: RegisterRequest, db: AsyncSession = Depends
         raise HTTPException(status_code=500, detail=str(e))
 
     return {
-        "message": f"Verification OTP bhej diya {data.email} pe.",
+        "message": f"A verification OTP was sent to {data.email}.",
         "email": data.email
     }
 
@@ -149,12 +149,12 @@ async def register_request_otp(data: RegisterRequest, db: AsyncSession = Depends
 async def verify_register_otp(data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
     ok = await verify_otp(db, data.email, data.otp, "register")
     if not ok:
-        raise HTTPException(status_code=400, detail="OTP galat hai ya expire ho gaya")
+        raise HTTPException(status_code=400, detail="The OTP is incorrect or has expired")
 
     result = await db.execute(select(Admin).where(Admin.email == data.email))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=404, detail="User nahi mila")
+        raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = True
     user.is_verified = True
@@ -181,14 +181,14 @@ async def resend_otp(data: ResendOTPRequest, db: AsyncSession = Depends(get_db))
     result = await db.execute(select(Admin).where(Admin.email == data.email))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=404, detail="Email registered nahi hai")
+        raise HTTPException(status_code=404, detail="Email is not registered")
 
     try:
         await create_otp(db, data.email, data.purpose)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"message": f"OTP dobara bhej diya {data.email} pe.", "email": data.email}
+    return {"message": f"A new OTP was sent to {data.email}.", "email": data.email}
 
 
 @router.post("/refresh")

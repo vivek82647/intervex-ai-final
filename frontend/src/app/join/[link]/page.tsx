@@ -24,7 +24,7 @@ export default function StudentJoinPage() {
 
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-  // Step 1: Form submit → session validate karo → OTP bhejo
+  // Step 1: Validate the session and send an OTP.
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -39,7 +39,7 @@ export default function StudentJoinPage() {
       const sessionData = await sessionRes.json();
       setSessionId(sessionData.id);
 
-      // OTP request bhejo
+      // Request an OTP.
       const otpRes = await fetch(`${API}/students/request-test-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -52,7 +52,7 @@ export default function StudentJoinPage() {
       });
 
       const otpData = await otpRes.json();
-      if (!otpRes.ok) throw new Error(otpData.detail || "OTP nahi bhej sake");
+      if (!otpRes.ok) throw new Error(otpData.detail || "Unable to send the OTP");
 
       setOtpEmail(form.email);
       setShowOTP(true);
@@ -63,7 +63,7 @@ export default function StudentJoinPage() {
     }
   };
 
-  // Step 2: OTP verify → test instructions page pe bhejo
+  // Step 2: Verify the OTP and continue to the instructions page.
   const handleOTPVerify = async (otp: string) => {
     const res = await fetch(`${API}/students/verify-test-otp`, {
       method: "POST",
@@ -78,15 +78,15 @@ export default function StudentJoinPage() {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "OTP galat hai");
+    if (!res.ok) throw new Error(data.detail || "The OTP is incorrect");
 
-    // Student info session storage mein save karo
+    // Save student details for the test session.
     sessionStorage.setItem(
       "student_info",
       JSON.stringify(data.student_info)
     );
 
-    // Instructions page pe bhejo
+    // Continue to the instructions page.
     router.push(`/student/session/${sessionId}/instructions`);
   };
 
@@ -113,7 +113,7 @@ export default function StudentJoinPage() {
           <h1 className="text-3xl font-black text-white tracking-tight">
             INTERVEX <span className="text-indigo-400">AI</span>
           </h1>
-          <p className="text-slate-400 mt-2 text-sm">Test Join Karo</p>
+          <p className="text-slate-400 mt-2 text-sm">Join Test</p>
         </div>
 
         {/* Form Card */}
@@ -153,7 +153,7 @@ export default function StudentJoinPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
               />
               <p className="text-xs text-gray-400 mt-1">
-                📧 OTP iss email pe aayega
+                We will send the OTP to this email address.
               </p>
             </div>
 
@@ -174,7 +174,7 @@ export default function StudentJoinPage() {
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                ❌ {error}
+                {error}
               </div>
             )}
 
@@ -185,13 +185,13 @@ export default function StudentJoinPage() {
                 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
                 transition-all shadow-md hover:shadow-lg mt-2"
             >
-              {loading ? "OTP bheja ja raha hai..." : "OTP Lao & Test Shuru Karo →"}
+              {loading ? "Sending OTP..." : "Send OTP and Continue"}
             </button>
           </form>
 
           <div className="mt-4 bg-indigo-50 rounded-xl p-3">
             <p className="text-xs text-indigo-700 text-center">
-              🔐 Aapki email pe 6-digit OTP aayega. Verify karne ke baad hi test shuru hoga.
+              We will send a 6-digit OTP to your email. Verify it before starting the test.
             </p>
           </div>
         </div>

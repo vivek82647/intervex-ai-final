@@ -54,7 +54,7 @@ export default function OTPModal({
   }, [isOpen]);
 
   const handleChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return; // sirf numbers
+    if (!/^\d*$/.test(value)) return; // Numbers only.
     const newOtp = [...otp];
     newOtp[index] = value.slice(-1);
     setOtp(newOtp);
@@ -93,7 +93,7 @@ export default function OTPModal({
   const handleSubmit = async (otpValue?: string) => {
     const finalOtp = otpValue || otp.join("");
     if (finalOtp.length !== 6) {
-      setError("6-digit OTP enter karo");
+      setError("Enter the 6-digit OTP");
       return;
     }
     setLoading(true);
@@ -101,7 +101,7 @@ export default function OTPModal({
     try {
       await onVerify(finalOtp);
     } catch (err: any) {
-      setError(err.message || "OTP galat hai. Dobara try karo.");
+      setError(err.message || "The OTP is incorrect. Please try again.");
       setOtp(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
     } finally {
@@ -129,14 +129,14 @@ export default function OTPModal({
         });
       }, 1000);
     } catch {
-      setError("OTP resend nahi ho saka. Dobara try karo.");
+      setError("Unable to resend the OTP. Please try again.");
     }
   };
 
   const purposeText = {
     login: "Admin Login",
-    register: "Account Verify",
-    test: "Test Shuru",
+    register: "Account Verification",
+    test: "Test Access",
   }[purpose];
 
   if (!isOpen) return null;
@@ -168,9 +168,9 @@ export default function OTPModal({
               />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">OTP Verify Karo</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Verify OTP</h2>
           <p className="text-gray-500 mt-2 text-sm">
-            {purposeText} ke liye 6-digit OTP bheja gaya hai
+            Enter the 6-digit OTP sent for {purposeText}
           </p>
           <p className="text-indigo-600 font-semibold mt-1 text-sm">{email}</p>
         </div>
@@ -201,7 +201,7 @@ export default function OTPModal({
         {/* Error */}
         {error && (
           <p className="text-red-500 text-sm text-center mb-4 bg-red-50 py-2 px-4 rounded-lg">
-            ❌ {error}
+            {error}
           </p>
         )}
 
@@ -219,10 +219,10 @@ export default function OTPModal({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
-              Verify ho raha hai...
+              Verifying...
             </span>
           ) : (
-            "OTP Verify Karo ✓"
+            "Verify OTP"
           )}
         </button>
 
@@ -233,7 +233,7 @@ export default function OTPModal({
               onClick={handleResend}
               className="text-indigo-600 hover:text-indigo-800 font-semibold text-sm underline"
             >
-              OTP Dobara Bhejo
+              Resend OTP
             </button>
           ) : (
             <p className="text-gray-400 text-sm">
@@ -244,7 +244,7 @@ export default function OTPModal({
         </div>
 
         <p className="text-center text-gray-400 text-xs mt-3">
-          ⏰ OTP 10 minutes mein expire ho jaata hai
+          The OTP expires in 10 minutes
         </p>
       </div>
     </div>

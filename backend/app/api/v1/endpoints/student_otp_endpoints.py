@@ -1,5 +1,5 @@
 """
-Yeh endpoints apne existing students.py mein ADD karo.
+Add these endpoints to the existing students.py module.
 
 Student test start karne se pehle OTP verify karna hoga.
 """
@@ -33,7 +33,7 @@ class StudentOTPVerify(BaseModel):
 def request_test_otp(data: StudentOTPRequest, db: Session = Depends(get_db)):
     """
     Student test join - Step 1:
-    Student details receive karo, OTP bhejo.
+    Receive student details and send an OTP.
     """
     try:
         create_otp(db, data.email, purpose="test")
@@ -41,7 +41,7 @@ def request_test_otp(data: StudentOTPRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
     return {
-        "message": f"OTP bhej diya {data.email} pe. Test shuru karne se pehle enter karo.",
+        "message": f"An OTP was sent to {data.email}. Enter it before starting the test.",
         "email": data.email
     }
 
@@ -53,7 +53,7 @@ def verify_test_otp(data: StudentOTPVerify, db: Session = Depends(get_db)):
     OTP verify karo, test access do.
     """
     if not verify_otp(db, data.email, data.otp, "test"):
-        raise HTTPException(status_code=400, detail="OTP galat hai ya expire ho gaya")
+        raise HTTPException(status_code=400, detail="The OTP is incorrect or has expired")
 
     # Verified! Frontend ko signal do ke test start kar sakte hain
     return {
