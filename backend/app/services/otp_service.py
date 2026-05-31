@@ -1,12 +1,9 @@
-"""Send OTP emails through Gmail SMTP."""
+"""Send OTP emails through Resend API (free, no credit card)."""
 import random
 import string
 import asyncio
-from datetime import datetime, timedelta
-import smtplib
 import httpx
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app.models.models import OTPRecord
@@ -18,92 +15,82 @@ def generate_otp(length: int = 6) -> str:
 
 
 def get_otp_subject(purpose: str) -> str:
-    subject_map = {
-        "login": "INTERVEX AI - Admin Login OTP",
-        "register": "INTERVEX AI - Account Verification OTP",
-        "test": "INTERVEX AI - Test Verification OTP",
-    }
-    return subject_map.get(purpose, "INTERVEX AI - OTP Verification")
+    return {
+        "login":    "INTERVEX AI — Admin Login OTP",
+        "register": "INTERVEX AI — Account Verification OTP",
+        "test":     "INTERVEX AI — Test Access OTP",
+    }.get(purpose, "INTERVEX AI — OTP Verification")
 
 
-def get_otp_html(otp: str) -> str:
+def get_otp_html(otp: str, purpose: str = "login") -> str:
+    purpose_label = {
+        "login":    "Admin Login",
+        "register": "Account Verification",
+        "test":     "Test Access Verification",
+    }.get(purpose, "Verification")
+
     return f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 30px;">
-          <div style="max-width: 500px; margin: auto; background: white; border-radius: 10px;
-                      padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h2 style="color: #1a1a2e; margin-bottom: 5px;">INTERVEX AI</h2>
-            <hr style="border: 1px solid #eee; margin-bottom: 20px;">
-            <p style="color: #555; font-size: 15px;">Your One-Time Password (OTP):</p>
-            <div style="background: #1a1a2e; color: #fff; font-size: 36px; font-weight: bold;
-                        letter-spacing: 12px; text-align: center; padding: 20px; border-radius: 8px;
-                        margin: 20px 0;">
-              {otp}
-            </div>
-            <p style="color: #888; font-size: 13px;">
-              This OTP is valid for <strong>10 minutes</strong>.<br>
-              Do not share it with anyone.
-            </p>
+    <html>
+    <body style="font-family:'Segoe UI',Arial,sans-serif;background:#0D1117;margin:0;padding:40px 20px;">
+      <div style="max-width:480px;margin:0 auto;background:#161B2E;border:1px solid rgba(255,255,255,0.08);border-radius:20px;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#5B6AF5,#00E5FF);padding:32px;text-align:center;">
+          <h1 style="color:white;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">INTERVEX AI</h1>
+          <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:13px;">{purpose_label}</p>
+        </div>
+        <div style="padding:36px 32px;">
+          <p style="color:rgba(255,255,255,0.5);font-size:14px;margin:0 0 28px;line-height:1.6;">
+            Your one-time verification code is:
+          </p>
+          <div style="background:rgba(91,106,245,0.15);border:2px solid rgba(91,106,245,0.4);border-radius:16px;padding:28px;text-align:center;margin-bottom:28px;">
+            <span style="font-size:42px;font-weight:900;letter-spacing:12px;color:#5B6AF5;font-family:monospace;">{otp}</span>
           </div>
-        </body>
-        </html>
-        """
+          <p style="color:rgba(255,255,255,0.3);font-size:13px;margin:0;text-align:center;">
+            ⏱ Valid for <strong style="color:rgba(255,255,255,0.5);">10 minutes</strong>. Never share this code.
+          </p>
+        </div>
+        <div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+          <p style="color:rgba(255,255,255,0.2);font-size:12px;margin:0;">
+            If you didn't request this, please ignore this email.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
 
 
-def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = get_otp_subject(purpose)
-        msg["From"] = settings.GMAIL_USER
-        msg["To"] = to_email
-        msg.attach(MIMEText(get_otp_html(otp), "html"))
-
-        with smtplib.SMTP(
-            settings.SMTP_HOST,
-            settings.SMTP_PORT,
-            timeout=settings.SMTP_TIMEOUT_SECONDS,
-        ) as server:
-            server.starttls()
-            server.login(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
-            server.sendmail(settings.GMAIL_USER, to_email, msg.as_string())
-
+def send_otp_via_resend(to_email: str, otp: str, purpose: str = "login") -> bool:
+    """Send OTP using Resend API (free tier: 3000 emails/month, no credit card)."""
+    if not settings.RESEND_API_KEY:
+        print(f"[DEV MODE] OTP for {to_email} ({purpose}): {otp}")
         return True
 
-    except Exception as e:
-        print(f"[OTP Email Error] {e}")
-        return False
-
-
-def send_otp_email_via_mailgun(to_email: str, otp: str, purpose: str = "login") -> bool:
-    from_email = settings.MAILGUN_FROM_ADDRESS or f"INTERVEX AI <postmaster@{settings.MAILGUN_DOMAIN}>"
     try:
         response = httpx.post(
-            f"{settings.MAILGUN_API_BASE_URL}/v3/{settings.MAILGUN_DOMAIN}/messages",
-            auth=("api", settings.MAILGUN_API_KEY),
-            data={
-                "from": from_email,
-                "to": to_email,
-                "subject": get_otp_subject(purpose),
-                "html": get_otp_html(otp),
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                "Content-Type": "application/json",
             },
-            timeout=settings.SMTP_TIMEOUT_SECONDS,
+            json={
+                "from": settings.RESEND_FROM_EMAIL,
+                "to": [to_email],
+                "subject": get_otp_subject(purpose),
+                "html": get_otp_html(otp, purpose),
+            },
+            timeout=15,
         )
-        if response.status_code == 200:
+        if response.status_code in (200, 201):
             return True
-        print(f"[Mailgun Email Error] HTTP {response.status_code}: {response.text}")
+        print(f"[Resend Error] HTTP {response.status_code}: {response.text}")
         return False
     except httpx.HTTPError as e:
-        print(f"[Mailgun Email Error] {e}")
+        print(f"[Resend Error] {e}")
         return False
 
 
 async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
-    if settings.APP_ENV == "production" and not (
-        settings.MAILGUN_API_KEY and settings.MAILGUN_DOMAIN
-    ):
-        raise Exception("Email delivery is not configured. Add MAILGUN_API_KEY and MAILGUN_DOMAIN.")
-
-    # Remove previous OTPs for this purpose.
+    # Remove old OTPs for this email+purpose
     await db.execute(
         delete(OTPRecord).where(
             OTPRecord.email == email,
@@ -113,33 +100,26 @@ async def create_otp(db: AsyncSession, email: str, purpose: str) -> str:
     await db.commit()
 
     otp = generate_otp()
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
-
     record = OTPRecord(
         email=email,
         otp=otp,
         purpose=purpose,
-        expires_at=expires_at,
-        is_used=False
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+        is_used=False,
     )
     db.add(record)
     await db.commit()
 
-    # Run the blocking email provider call in a worker thread.
-    send_email = (
-        send_otp_email_via_mailgun
-        if settings.MAILGUN_API_KEY and settings.MAILGUN_DOMAIN
-        else send_otp_email
-    )
     try:
         sent = await asyncio.wait_for(
-            asyncio.to_thread(send_email, email, otp, purpose),
-            timeout=settings.SMTP_TIMEOUT_SECONDS + 5,
+            asyncio.to_thread(send_otp_via_resend, email, otp, purpose),
+            timeout=20,
         )
     except asyncio.TimeoutError:
-        raise Exception("OTP email service timed out. Please try again.")
+        raise Exception("OTP email timed out. Please try again.")
+
     if not sent:
-        raise Exception("Unable to send the OTP email. Check the email service configuration.")
+        raise Exception("Failed to send OTP email. Check RESEND_API_KEY in .env")
 
     return otp
 
@@ -155,10 +135,8 @@ async def verify_otp(db: AsyncSession, email: str, otp: str, purpose: str) -> bo
         )
     )
     record = result.scalar_one_or_none()
-
     if not record:
         return False
-
     record.is_used = True
     await db.commit()
     return True

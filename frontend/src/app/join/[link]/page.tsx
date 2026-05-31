@@ -3,103 +3,103 @@
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import OTPModal from "@/components/shared/OTPModal";
+import Cookies from "js-cookie";
+import { useStudentStore } from "@/store/auth.store";
 
 export default function StudentJoinPage() {
   const router = useRouter();
   const params = useParams();
   const sessionLink = params.link as string;
+  const { setSession } = useStudentStore();
 
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    roll_number: "",
-  });
-  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [form, setForm] = useState({ full_name: "", email: "", roll_number: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // OTP state
   const [showOTP, setShowOTP] = useState(false);
   const [otpEmail, setOtpEmail] = useState("");
 
   const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-  // Step 1: Validate the session and send an OTP.
+  // Step 1: Send OTP
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.full_name || !form.email) {
+      setError("Name aur email required hai");
+      return;
+    }
     setLoading(true);
     setError("");
 
     try {
-      // Pehle session validate karo (link se session ID lo)
-      const sessionRes = await fetch(`${API}/sessions/by-link/${sessionLink}`);
-      if (!sessionRes.ok) {
-        throw new Error("Invalid test link. Admin se contact karo.");
-      }
-      const sessionData = await sessionRes.json();
-      setSessionId(sessionData.id);
-
-      // Request an OTP.
-      const otpRes = await fetch(`${API}/students/request-test-otp`, {
+      const res = await fetch(`${API}/auth/student/join/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: form.name,
+          join_link: sessionLink,
+          full_name: form.full_name,
           email: form.email,
           roll_number: form.roll_number,
-          session_id: sessionData.id,
         }),
+        signal: AbortSignal.timeout(30000),
       });
 
-      const otpData = await otpRes.json();
-      if (!otpRes.ok) throw new Error(otpData.detail || "Unable to send the OTP");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "OTP send nahi ho paya");
 
       setOtpEmail(form.email);
       setShowOTP(true);
     } catch (err: any) {
-      setError(err.message);
+      setError(
+        err.name === "TimeoutError"
+          ? "Request timeout. Please try again."
+          : err.message
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // Step 2: Verify the OTP and continue to the instructions page.
+  // Step 2: Verify OTP → get token → redirect to test
   const handleOTPVerify = async (otp: string) => {
-    const res = await fetch(`${API}/students/verify-test-otp`, {
+    const res = await fetch(`${API}/auth/student/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        join_link: sessionLink,
+        full_name: form.full_name,
         email: form.email,
+        roll_number: form.roll_number || undefined,
         otp,
-        session_id: sessionId,
-        name: form.name,
-        roll_number: form.roll_number,
       }),
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "The OTP is incorrect");
+    if (!res.ok) throw new Error(data.detail || "OTP galat hai");
 
-    // Save student details for the test session.
-    sessionStorage.setItem(
-      "student_info",
-      JSON.stringify(data.student_info)
-    );
+    // Save token and student info
+    Cookies.set("access_token", data.access_token, { expires: 1 });
+    setSession({
+      studentId: data.student_id,
+      studentName: data.student_name,
+      sessionId: data.session_id,
+      sessionTitle: data.session_title,
+      token: data.access_token,
+    });
 
-    // Continue to the instructions page.
-    router.push(`/student/session/${sessionId}/instructions`);
+    router.push(`/student/session/${data.session_id}/instructions`);
   };
 
-  // OTP resend
+  // Resend OTP
   const handleResend = async () => {
-    const res = await fetch(`${API}/students/request-test-otp`, {
+    const res = await fetch(`${API}/auth/student/join/send-otp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: form.name,
+        join_link: sessionLink,
+        full_name: form.full_name,
         email: form.email,
         roll_number: form.roll_number,
-        session_id: sessionId,
       }),
     });
     if (!res.ok) throw new Error("Resend failed");
@@ -133,8 +133,8 @@ export default function StudentJoinPage() {
               <input
                 type="text"
                 required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                 placeholder="Apna naam likhein"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
               />
@@ -153,7 +153,7 @@ export default function StudentJoinPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
               />
               <p className="text-xs text-gray-400 mt-1">
-                We will send the OTP to this email address.
+                OTP is email pe aayega.
               </p>
             </div>
 
@@ -164,9 +164,7 @@ export default function StudentJoinPage() {
               <input
                 type="text"
                 value={form.roll_number}
-                onChange={(e) =>
-                  setForm({ ...form, roll_number: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, roll_number: e.target.value })}
                 placeholder="Jaise: 2021CS001"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
               />
@@ -185,13 +183,13 @@ export default function StudentJoinPage() {
                 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
                 transition-all shadow-md hover:shadow-lg mt-2"
             >
-              {loading ? "Sending OTP..." : "Send OTP and Continue"}
+              {loading ? "OTP bhej raha hai..." : "OTP Bhejo aur Continue Karo"}
             </button>
           </form>
 
           <div className="mt-4 bg-indigo-50 rounded-xl p-3">
             <p className="text-xs text-indigo-700 text-center">
-              We will send a 6-digit OTP to your email. Verify it before starting the test.
+              6-digit OTP aapke email pe aayega. Verify karne ke baad test shuru hoga.
             </p>
           </div>
         </div>
