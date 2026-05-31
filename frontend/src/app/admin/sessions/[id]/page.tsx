@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft, Copy, Eye, BarChart3, Zap, Clock,
+  ArrowLeft, Trash2, Copy, Eye, BarChart3, Zap, Clock,
   BookOpen, Shield, Users, CheckCircle, Link as LinkIcon,
   QrCode, Edit, Trash2
 } from 'lucide-react';
@@ -31,27 +31,28 @@ export default function SessionDetailPage() {
     toast.success('Join link copied to clipboard!');
   };
 
+  const handleDelete = async () => {
+    if (!session) return;
+    if (!confirm(`Delete "${session.title}"? This cannot be undone.`)) return;
+    try {
+      await sessionApi.delete(session.id);
+      toast.success('Session deleted');
+      router.push('/admin/sessions');
+    } catch { toast.error('Delete failed'); }
+  };
+
   const updateStatus = async (status: string) => {
-  if (!session) return;
-
-  setActivating(true);
-
-  try {
-    status === 'active'
-      ? await sessionApi.activate(session.id)
-      : await sessionApi.end(session.id);
-
-    toast.success(`Session ${status}`);
-
-    const res = await sessionApi.get(session.id);
-    setSession(res.data);
-
-  } catch (err: any) {
-    toast.error(err?.response?.data?.detail || 'Update failed');
-  } finally {
-    setActivating(false);
-  }
-};
+    if (!session) return;
+    setActivating(true);
+    try {
+      await sessionApi.updateStatus(session.id, status);
+      toast.success(`Session ${status}`);
+      const res = await sessionApi.get(session.id);
+      setSession(res.data);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Update failed');
+    } finally { setActivating(false); }
+  };
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -116,6 +117,9 @@ export default function SessionDetailPage() {
         {/* Main info */}
         <div className="lg:col-span-2 space-y-5">
           {/* Join link card */}
+          <button onClick={handleDelete} className="btn-danger flex items-center gap-2">
+            <Trash2 className="w-4 h-4" /> Delete Session
+          </button>
           {session.status !== 'archived' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
               <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">

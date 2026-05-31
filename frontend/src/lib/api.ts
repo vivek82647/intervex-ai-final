@@ -57,13 +57,8 @@ api.interceptors.response.use(
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
   adminRegister: (data: any) => api.post('/auth/admin/register', data),
-
   adminLogin: (data: any) => api.post('/auth/admin/login', data),
-
   studentJoin: (data: any) => api.post('/auth/student/join', data),
-
-  getSessionByLink: (link: string) =>
-    api.get(`/sessions/join/${link}`),
 };
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
@@ -73,15 +68,10 @@ export const sessionApi = {
   get: (id: string) => api.get(`/sessions/${id}`),
   update: (id: string, data: any) => api.patch(`/sessions/${id}`, data),
   delete: (id: string) => api.delete(`/sessions/${id}`),
- activate: (id: string) =>
-  api.patch(`/sessions/${id}/status`, {
-    status: 'active'
-  }),
-  
-end: (id: string) =>
-  api.patch(`/sessions/${id}/status`, {
-    status: 'ended'
-  }),
+  activate: (id: string) => api.patch(`/sessions/${id}/status`, { status: 'active' }),
+  end: (id: string) => api.patch(`/sessions/${id}/status`, { status: 'ended' }),
+  updateStatus: (id: string, status: string) => api.patch(`/sessions/${id}/status`, { status }),
+  delete: (id: string) => api.delete(`/sessions/${id}`),
   getQuestions: (id: string) => api.get(`/sessions/${id}/questions`),
   addQuestions: (id: string, data: any) => api.post(`/sessions/${id}/questions`, data),
   getMonitor: (id: string) => api.get(`/sessions/${id}/monitor`),
@@ -125,8 +115,7 @@ export const attemptApi = {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 export const adminApi = {
   dashboard: () => api.get('/admin/dashboard'),
-  results: (sessionId: string) =>
-  api.get(`/results/session/${sessionId}`),
+  results: (params?: any) => api.get('/admin/results', { params }),
 };
 
 // ─── Classes ──────────────────────────────────────────────────────────────────
@@ -134,7 +123,4 @@ export const classApi = {
   list: () => api.get('/classes'),
   create: (data: any) => api.post('/classes', data),
   delete: (id: string) => api.delete(`/classes/${id}`),
-
-  enrollStudent: (classId: string, studentId: string) =>
-    api.post(`/classes/${classId}/students/${studentId}`),
 };

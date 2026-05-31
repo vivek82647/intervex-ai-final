@@ -307,3 +307,27 @@ async def get_live_status(
         "terminated": terminated,
         "students": students_live
     }
+
+
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: str,
+    current_user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a session and its questions"""
+    result = await db.execute(
+        select(DBSession).where(
+            DBSession.id == session_id,
+            DBSession.admin_id == current_user["user_id"]
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Delete session questions first
+    await db.execute(delete(SessionQuestion).where(SessionQuestion.session_id == session_id))
+    await db.delete(session)
+    await db.commit()
+    return {"success": True}
