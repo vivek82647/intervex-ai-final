@@ -9,10 +9,9 @@ import {
   CheckCircle, XCircle
 } from 'lucide-react';
 import Link from 'next/link';
-import { adminApi, sessionApi } from '@/lib/api';
+import { resultsApi } from '@/lib/api';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
 } from 'recharts';
 
 const PIE_COLORS = ['#5B6AF5', '#10B981', '#F59E0B', '#F43F5E', '#00E5FF'];
@@ -26,8 +25,8 @@ export default function SessionResultsPage() {
 
   useEffect(() => {
     Promise.all([
-      adminApi.results(sessionId),
-      adminApi.dashboard(),
+      resultsApi.sessionResults(sessionId),
+      resultsApi.analytics(sessionId),
     ]).then(([rRes, aRes]) => {
       setData(rRes.data);
       setAnalytics(aRes.data);
@@ -37,7 +36,7 @@ export default function SessionResultsPage() {
 
   const exportCsv = async () => {
     try {
-      const res = await adminApi.results(sessionId);
+      const res = await resultsApi.sessionResults(sessionId);
       const results = res.data?.results || [];
       const headers = ['Rank','Student','Roll No','Score','Max Score','Percentage','Time (min)','Warnings','Status'];
       const rows = results.map((r: any, i: number) => [
