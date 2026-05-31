@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, Copy, Eye, BarChart3, Zap, Clock,
-  BookOpen, Shield, Users, CheckCircle, Link as LinkIcon
+  BookOpen, Shield, Users, Link as LinkIcon, Trash2
 } from 'lucide-react';
 import { sessionApi } from '@/lib/api';
 import type { Session } from '@/types';
@@ -109,16 +109,15 @@ export default function SessionDetailPage() {
               End Session
             </button>
           )}
+          <button onClick={handleDelete} className="btn-danger flex items-center gap-2">
+            <Trash2 className="w-4 h-4" /> Delete
+          </button>
         </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Main info */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Join link card */}
-          <button onClick={handleDelete} className="btn-danger flex items-center gap-2">
-            <Trash2 className="w-4 h-4" /> Delete Session
-          </button>
           {session.status !== 'archived' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
               <h2 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
@@ -145,7 +144,6 @@ export default function SessionDetailPage() {
             </motion.div>
           )}
 
-          {/* Description & Instructions */}
           {(session.description || session.instructions) && (
             <div className="glass-card p-6">
               {session.description && (
@@ -164,7 +162,7 @@ export default function SessionDetailPage() {
           )}
         </div>
 
-        {/* Sidebar stats */}
+        {/* Sidebar */}
         <div className="space-y-4">
           <div className="glass-card p-5 space-y-4">
             <h2 className="font-display font-semibold text-white">Session Config</h2>
