@@ -230,6 +230,8 @@ async def submit_attempt(
         raise HTTPException(status_code=404, detail="Attempt not found")
     if attempt.status == "submitted":
         raise HTTPException(status_code=400, detail="Already submitted")
+    if attempt.status == "terminated":
+        raise HTTPException(status_code=403, detail="Your session was terminated. You cannot submit.")
     
     # Get session
     session_result = await db.execute(select(DBSession).where(DBSession.id == attempt.session_id))
