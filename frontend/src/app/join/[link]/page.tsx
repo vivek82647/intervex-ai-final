@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Cookies from "js-cookie";
+import { useStudentStore } from "@/store/auth.store";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -9,6 +10,7 @@ export default function StudentJoinPage() {
   const router = useRouter();
   const params = useParams();
   const sessionLink = params.link as string;
+  const { setSession } = useStudentStore();
 
   const [form, setForm] = useState({ full_name: "", email: "", roll_number: "" });
   const [loading, setLoading] = useState(false);
@@ -35,14 +37,17 @@ export default function StudentJoinPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to join session");
 
+      // Save token
       Cookies.set("access_token", data.access_token, { expires: 1 });
-      sessionStorage.setItem("student_info", JSON.stringify({
-        student_id: data.student_id,
-        student_name: data.student_name,
-        session_id: data.session_id,
-        session_title: data.session_title,
+
+      // ✅ Set student store — test page issi se studentId/studentName leta hai
+      setSession({
+        studentId: data.student_id,
+        studentName: data.student_name,
+        sessionId: data.session_id,
+        sessionTitle: data.session_title,
         token: data.access_token,
-      }));
+      });
 
       router.push(`/student/session/${data.session_id}/instructions`);
     } catch (err: any) {
