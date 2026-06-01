@@ -35,12 +35,16 @@ export default function StudentJoinPage() {
         signal: AbortSignal.timeout(30000),
       });
       const data = await res.json();
+
+      // ── Terminated student — redirect to terminated page ──
+      if (res.status === 403 && data.detail === "TERMINATED") {
+        router.replace("/student/terminated");
+        return;
+      }
+
       if (!res.ok) throw new Error(data.detail || "Failed to join session");
 
-      // Save token
       Cookies.set("access_token", data.access_token, { expires: 1 });
-
-      // ✅ Set student store — test page issi se studentId/studentName leta hai
       setSession({
         studentId: data.student_id,
         studentName: data.student_name,

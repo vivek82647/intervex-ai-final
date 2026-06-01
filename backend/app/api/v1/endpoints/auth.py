@@ -8,7 +8,7 @@ from app.core.security import (
     verify_password, create_access_token, create_refresh_token, decode_token,
     hash_password, get_current_user
 )
-from app.models.models import Admin, Student, Session as DBSession
+from app.models.models import Admin, Student, Session as DBSession, Attempt
 import uuid as uuid_lib
 
 router = APIRouter(tags=["auth"])
@@ -115,6 +115,7 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/student/join")
 async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_db)):
+    # Validate session
     result = await db.execute(
         select(DBSession).where(DBSession.join_link == data.join_link)
     )
@@ -125,6 +126,7 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=400,
                             detail=f"Session is '{session.status}' — cannot join right now")
 
+    # Find or create student
     result = await db.execute(
         select(Student).where(
             Student.admin_id == session.admin_id,
@@ -144,6 +146,27 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
         db.add(student)
         await db.commit()
         await db.refresh(student)
+
+    # ── SECURITY CHECK: block terminated students from rejoining ──
+    existing_attempt = await db.execute(
+        select(Attempt).where(
+            Attempt.session_id == session.id,
+            Attempt.student_id == student.id,
+        )
+    )
+    attempt = existing_attempt.scalar_one_or_none()
+
+    if attempt and attempt.status == "terminated":
+        raise HTTPException(
+            status_code=403,
+            detail="TERMINATED"  # frontend checks this exact string
+        )
+    if attempt and attempt.status == "submitted":
+        raise HTTPException(
+            status_code=400,
+            detail="You have already submitted this test"
+        )
+    # ─────────────────────────────────────────────────────────────
 
     token_data = {
         "sub": str(student.id),
