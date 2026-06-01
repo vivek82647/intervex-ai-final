@@ -11,7 +11,7 @@ import Cookies from 'js-cookie';
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 type Step = 'credentials' | 'otp';
 
-export default function StudentLoginPage() {
+function StudentLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const joinLink = searchParams.get('join'); // e.g. /student/login?join=session_xxxx
@@ -155,5 +155,15 @@ export default function StudentLoginPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+
+import { Suspense } from 'react';
+export default function StudentLoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex items-center justify-center"><div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" /></div>}>
+      <StudentLoginContent />
+    </Suspense>
   );
 }
