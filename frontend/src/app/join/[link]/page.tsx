@@ -1,116 +1,185 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Brain, LogIn, UserPlus } from "lucide-react";
-import Link from "next/link";
-import { useStudentStore } from "@/store/auth.store";
 import Cookies from "js-cookie";
+import { useStudentStore } from "@/store/auth.store";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-export default function JoinPage() {
+type Step = "details" | "otp";
+
+export default function StudentJoinPage() {
   const router = useRouter();
   const params = useParams();
   const sessionLink = params.link as string;
-  const { studentId, token, setSession } = useStudentStore();
+  const { setSession } = useStudentStore();
+
+  const [step, setStep] = useState<Step>("details");
+  const [form, setForm] = useState({ full_name: "", email: "", roll_number: "" });
+  const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
 
-  // If already logged in, auto-join
-  useEffect(() => {
-    const storedToken = token || Cookies.get('access_token');
-    if (studentId && storedToken) {
-      handleJoin(storedToken);
-    } else {
-      // Fetch session info to show title
-      fetchSessionInfo();
-    }
-  }, []);
-
-  const fetchSessionInfo = async () => {
-    try {
-      const res = await fetch(`${API}/sessions/join/${sessionLink}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSessionInfo(data);
-      }
-    } catch {}
-  };
-
-  const handleJoin = async (accessToken: string) => {
+  // Step 1: Send OTP
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.full_name || !form.email) { setError("Name and email are required"); return; }
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/student/join`, {
+      const res = await fetch(`${API}/auth/student/join/send-otp`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ join_link: sessionLink }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          join_link: sessionLink,
+          full_name: form.full_name,
+          email: form.email,
+          roll_number: form.roll_number || undefined,
+        }),
+        signal: AbortSignal.timeout(30000),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to join");
-
-      setSession({ sessionId: data.session_id, sessionTitle: data.session_title });
-      router.push(`/student/session/${data.session_id}/instructions`);
+      if (!res.ok) throw new Error(data.detail || "Failed to send OTP");
+      setStep("otp");
     } catch (err: any) {
-      setError(err.message);
-      setLoading(false);
-    }
+      setError(err.name === "TimeoutError" ? "Request timed out." : err.message);
+    } finally { setLoading(false); }
   };
 
-  // Not logged in — show login/register options
+  // Step 2: Verify OTP + Join
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.length !== 6) { setError("Enter 6-digit OTP"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/auth/student/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          join_link: sessionLink,
+          full_name: form.full_name,
+          email: form.email,
+          roll_number: form.roll_number || undefined,
+          otp,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json();
+      if (res.status === 403 && data.detail === "TERMINATED") {
+        router.replace("/student/terminated");
+        return;
+      }
+      if (!res.ok) throw new Error(data.detail || "Failed to join");
+
+      Cookies.set("access_token", data.access_token, { expires: 1 });
+      setSession({
+        studentId: data.student_id,
+        studentName: data.student_name,
+        sessionId: data.session_id,
+        sessionTitle: data.session_title,
+        token: data.access_token,
+      });
+      router.push(`/student/session/${data.session_id}/instructions`);
+    } catch (err: any) {
+      setError(err.name === "TimeoutError" ? "Request timed out." : err.message);
+    } finally { setLoading(false); }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm text-center">
-        <div className="flex justify-center mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg">
-            <Brain className="w-8 h-8 text-white" />
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-900 flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-black text-white tracking-tight">
+            INTERVEX <span className="text-indigo-400">AI</span>
+          </h1>
+          <p className="text-slate-400 mt-2 text-sm">Join Test</p>
         </div>
 
-        <h1 className="text-2xl font-black text-white mb-2">
-          {sessionInfo?.title || 'Join Test'}
-        </h1>
-        <p className="text-white/40 text-sm mb-8">
-          {sessionInfo ? `${sessionInfo.duration_minutes} min • Sign in to continue` : 'Sign in to join this test session'}
-        </p>
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
 
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            {error}
-          </div>
-        )}
+          {/* ── Step 1: Details ── */}
+          {step === "details" && (
+            <>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Enter Your Details</h2>
+              <p className="text-gray-500 text-sm mb-6">We'll send a verification code to your email</p>
 
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 text-white/60">
-            <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-            Joining session...
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <Link
-              href={`/student/login?join=${sessionLink}`}
-              className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold transition-all"
-            >
-              <LogIn className="w-4 h-4" />
-              Sign In & Join Test
-            </Link>
-            <Link
-              href={`/student/register`}
-              className="flex items-center justify-center gap-2 w-full bg-white/10 hover:bg-white/15 border border-white/10 text-white py-3.5 rounded-xl font-semibold transition-all"
-            >
-              <UserPlus className="w-4 h-4" />
-              Create Account First
-            </Link>
-          </div>
-        )}
+              <form onSubmit={handleSendOtp} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                  <input type="text" required value={form.full_name}
+                    onChange={e => setForm({ ...form, full_name: e.target.value })}
+                    placeholder="Enter your full name"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
+                  <input type="email" required value={form.email}
+                    onChange={e => setForm({ ...form, email: e.target.value })}
+                    placeholder="your@email.com"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number <span className="text-gray-400">(Optional)</span></label>
+                  <input type="text" value={form.roll_number}
+                    onChange={e => setForm({ ...form, roll_number: e.target.value })}
+                    placeholder="e.g. 2021CS001"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900" />
+                </div>
 
-        <p className="text-white/20 text-xs mt-6">
-          You need an account to take this test
-        </p>
+                {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
+
+                <button type="submit" disabled={loading}
+                  className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all mt-2">
+                  {loading ? "Sending OTP..." : "Verify Email →"}
+                </button>
+              </form>
+            </>
+          )}
+
+          {/* ── Step 2: OTP ── */}
+          {step === "otp" && (
+            <>
+              <div className="text-center mb-6">
+                <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <span className="text-2xl">✉️</span>
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Check your email</h2>
+                <p className="text-gray-500 text-sm mt-1">
+                  OTP sent to <span className="font-medium text-gray-800">{form.email}</span>
+                </p>
+              </div>
+
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 text-center">Enter 6-digit OTP</label>
+                  <input
+                    value={otp}
+                    onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    maxLength={6}
+                    autoFocus
+                    className="w-full px-4 py-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 text-center text-2xl font-mono tracking-[0.4em]"
+                  />
+                  <p className="text-xs text-gray-400 mt-2 text-center">Valid for 10 minutes</p>
+                </div>
+
+                {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
+
+                <button type="submit" disabled={loading || otp.length !== 6}
+                  className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all">
+                  {loading ? "Verifying..." : "Start Test →"}
+                </button>
+
+                <button type="button" onClick={() => { setStep("details"); setOtp(""); setError(""); }}
+                  className="w-full text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                  ← Change email
+                </button>
+              </form>
+            </>
+          )}
+
+        </div>
       </div>
     </div>
   );

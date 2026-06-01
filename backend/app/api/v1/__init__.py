@@ -11,12 +11,10 @@ from app.api.v1.endpoints.questions import router as questions_router
 from app.api.v1.endpoints.sessions import router as sessions_router
 from app.api.v1.endpoints.attempts import router as attempts_router
 from app.api.v1.endpoints.results import router as results_router
-from app.api.v1.endpoints.student_auth import router as student_auth_router  # ← NEW
 
 router = APIRouter()
 
 router.include_router(auth_router,          prefix="/auth",      tags=["Auth"])
-router.include_router(student_auth_router,  prefix="/student",   tags=["Student Auth"])  # ← NEW
 router.include_router(admin_router,         prefix="/admin",     tags=["Admin"])
 router.include_router(classes_router,       prefix="/classes",   tags=["Classes"])
 router.include_router(students_router,      prefix="/students",  tags=["Students"])

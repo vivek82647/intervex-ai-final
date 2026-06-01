@@ -192,3 +192,136 @@ async def approve_rejoin(
     attempt.termination_reason = "REJOIN_APPROVED"
     await db.commit()
     return {"message": "Rejoin approved. Student can now re-enter the test."}
+
+# ─── Student Join with OTP ────────────────────────────────────────────────────
+
+from app.services.email_service import send_otp_email, generate_otp
+from app.models.models import OTPRecord
+from sqlalchemy import delete as sql_delete
+from datetime import timedelta
+
+OTP_EXPIRE_MINUTES = 10
+
+
+async def _create_and_send_otp(db, email: str, name: str = "") -> bool:
+    await db.execute(sql_delete(OTPRecord).where(OTPRecord.email == email, OTPRecord.purpose == "test"))
+    await db.commit()
+    otp = generate_otp()
+    record = OTPRecord(
+        email=email, otp=otp, purpose="test",
+        expires_at=datetime.utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+        is_used=False,
+    )
+    db.add(record)
+    await db.commit()
+    import asyncio
+    return await asyncio.to_thread(send_otp_email, email, otp, "register", name)
+
+
+async def _verify_otp_code(db, email: str, otp: str) -> bool:
+    from sqlalchemy import select as sel
+    result = await db.execute(
+        sel(OTPRecord).where(
+            OTPRecord.email == email,
+            OTPRecord.otp == otp,
+            OTPRecord.purpose == "test",
+            OTPRecord.is_used == False,
+            OTPRecord.expires_at > datetime.utcnow()
+        )
+    )
+    record = result.scalar_one_or_none()
+    if not record:
+        return False
+    record.is_used = True
+    await db.commit()
+    return True
+
+
+class StudentJoinSendOtpRequest(BaseModel):
+    join_link: str
+    full_name: str
+    email: EmailStr
+    roll_number: Optional[str] = None
+
+
+@router.post("/student/join/send-otp")
+async def student_join_send_otp(data: StudentJoinSendOtpRequest, db: AsyncSession = Depends(get_db)):
+    """Step 1: Validate session, send OTP to student email"""
+    result = await db.execute(select(DBSession).where(DBSession.join_link == data.join_link))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Invalid session link")
+    if session.status != "active":
+        raise HTTPException(status_code=400, detail=f"Session is '{session.status}'")
+
+    sent = await _create_and_send_otp(db, data.email, data.full_name)
+    if not sent:
+        raise HTTPException(status_code=500, detail="Failed to send OTP. Please try again.")
+    return {"message": f"OTP sent to {data.email}"}
+
+
+class StudentJoinVerifyRequest(BaseModel):
+    join_link: str
+    full_name: str
+    email: EmailStr
+    roll_number: Optional[str] = None
+    otp: str
+
+
+@router.post("/student/join")
+async def student_join(data: StudentJoinVerifyRequest, db: AsyncSession = Depends(get_db)):
+    """Step 2: Verify OTP and issue student token"""
+    # Verify OTP first
+    if not await _verify_otp_code(db, data.email, data.otp):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    result = await db.execute(select(DBSession).where(DBSession.join_link == data.join_link))
+    session = result.scalar_one_or_none()
+    if not session or session.status != "active":
+        raise HTTPException(status_code=400, detail="Session not available")
+
+    # Find or create student
+    result = await db.execute(select(Student).where(Student.email == data.email))
+    student = result.scalar_one_or_none()
+    if not student:
+        student = Student(
+            id=str(uuid_lib.uuid4()),
+            email=data.email,
+            password_hash="",
+            full_name=data.full_name,
+            roll_number=data.roll_number,
+            is_verified=True,
+            is_active=True,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+    # Check existing attempt
+    existing = await db.execute(
+        select(Attempt).where(Attempt.session_id == session.id, Attempt.student_id == student.id)
+    )
+    attempt = existing.scalar_one_or_none()
+    if attempt:
+        if attempt.status == "submitted":
+            raise HTTPException(status_code=400, detail="You have already submitted this test")
+        if attempt.status == "terminated":
+            if attempt.termination_reason != "REJOIN_APPROVED":
+                raise HTTPException(status_code=403, detail="TERMINATED")
+            attempt.status = "in_progress"
+            attempt.termination_reason = None
+            attempt.warning_count = 0
+            attempt.started_at = datetime.utcnow()
+            await db.commit()
+
+    token_data = {"sub": str(student.id), "email": student.email, "role": "student", "session_id": session.id}
+    return {
+        "access_token": create_access_token(token_data),
+        "token_type": "bearer",
+        "role": "student",
+        "student_id": student.id,
+        "student_name": student.full_name,
+        "session_id": session.id,
+        "session_title": session.title,
+        "duration_minutes": session.duration_minutes,
+    }
