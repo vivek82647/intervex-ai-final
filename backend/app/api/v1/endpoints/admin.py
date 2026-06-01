@@ -1,7 +1,6 @@
 """
 Admin Endpoints - Dashboard stats, profile
 """
-import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -23,9 +22,6 @@ async def get_dashboard(
     total_classes = await db.execute(
         select(func.count(Class.id)).where(Class.admin_id == admin_id)
     )
-    total_students = await db.execute(
-        select(func.count(Student.id)).where(Student.admin_id == admin_id)
-    )
     total_sessions = await db.execute(
         select(func.count(DBSession.id)).where(DBSession.admin_id == admin_id)
     )
@@ -36,6 +32,12 @@ async def get_dashboard(
     )
     total_attempts = await db.execute(
         select(func.count(Attempt.id))
+        .join(DBSession, Attempt.session_id == DBSession.id)
+        .where(DBSession.admin_id == admin_id)
+    )
+    # Count unique students who attempted this admin's sessions
+    total_students = await db.execute(
+        select(func.count(func.distinct(Attempt.student_id)))
         .join(DBSession, Attempt.session_id == DBSession.id)
         .where(DBSession.admin_id == admin_id)
     )

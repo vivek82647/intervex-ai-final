@@ -104,7 +104,7 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
 
     # Find or create student
     result = await db.execute(
-        select(Student).where(Student.admin_id == session.admin_id, Student.email == data.email)
+        select(Student).where(Student.email == data.email)
     )
     student = result.scalar_one_or_none()
     if not student:
@@ -141,7 +141,7 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
 
     token_data = {
         "sub": str(student.id), "email": student.email,
-        "role": "student", "session_id": session.id, "admin_id": session.admin_id,
+        "role": "student", "session_id": session.id,
     }
     return {
         "access_token": create_access_token(token_data),

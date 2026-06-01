@@ -20,18 +20,16 @@ async def create_student(
     db: AsyncSession = Depends(get_db)
 ):
     existing = await db.execute(
-        select(Student).where(
-            Student.admin_id == current_user["user_id"],
-            Student.email == data.email
-        )
+        select(Student).where(Student.email == data.email)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Student with this email already exists")
 
     student = Student(
         id=str(uuid.uuid4()),
-        admin_id=current_user["user_id"],
         email=data.email,
+        password_hash="",
+        is_verified=False,
         full_name=data.full_name,
         roll_number=data.roll_number,
         phone=data.phone,
@@ -48,6 +46,6 @@ async def list_students(
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
-        select(Student).where(Student.admin_id == current_user["user_id"])
+        select(Student)
     )
     return result.scalars().all()
