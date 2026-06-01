@@ -1,10 +1,16 @@
 """
 Email Service - Gmail SMTP se OTP bhejta hai
 """
+import random
+import string
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from app.core.config import settings
+
+
+def generate_otp(length: int = 6) -> str:
+    return ''.join(random.choices(string.digits, k=length))
 
 
 def get_otp_html(otp: str, purpose: str = "login") -> str:
@@ -46,7 +52,6 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "login") -> bool:
         "register": "INTERVEX AI — Verification OTP",
     }
 
-    # Dev mode — no email credentials
     if not settings.GMAIL_USER or not settings.GMAIL_APP_PASSWORD:
         print(f"[DEV] OTP for {to_email} ({purpose}): {otp}")
         return True
