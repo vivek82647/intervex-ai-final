@@ -1,5 +1,5 @@
 """
-Core Configuration - SQLite + Groq
+Core Configuration - SQLite + Groq + Resend
 """
 import secrets
 from typing import List
@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Super Admin
     SUPER_ADMIN_EMAIL: str = "admin@intervex.ai"
     SUPER_ADMIN_PASSWORD: str = "Admin@123!"
+
+    # Resend Email (free — resend.com, no credit card)
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "INTERVEX AI <onboarding@resend.dev>"
 
     class Config:
         env_file = ".env"
