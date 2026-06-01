@@ -18,19 +18,15 @@ def gen_uuid():
     return str(uuid.uuid4())
 
 
-# ─── Enums ────────────────────────────────────────────────────────────────────
-
 class UserRole(str, enum.Enum):
     SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     STUDENT = "student"
 
-
 class QuestionType(str, enum.Enum):
     MCQ = "mcq"
     DESCRIPTIVE = "descriptive"
     CODING = "coding"
-
 
 class Difficulty(str, enum.Enum):
     EASY = "easy"
@@ -39,13 +35,11 @@ class Difficulty(str, enum.Enum):
     HARD = "hard"
     HIGH = "high"
 
-
 class SessionStatus(str, enum.Enum):
     DRAFT = "draft"
     ACTIVE = "active"
     ENDED = "ended"
     ARCHIVED = "archived"
-
 
 class AttemptStatus(str, enum.Enum):
     NOT_STARTED = "not_started"
@@ -53,7 +47,6 @@ class AttemptStatus(str, enum.Enum):
     SUBMITTED = "submitted"
     TERMINATED = "terminated"
     EVALUATED = "evaluated"
-
 
 class WarningType(str, enum.Enum):
     TAB_SWITCH = "tab_switch"
@@ -65,8 +58,6 @@ class WarningType(str, enum.Enum):
     DEV_TOOLS = "dev_tools"
     MULTIPLE_TABS = "multiple_tabs"
 
-
-# ─── Models ───────────────────────────────────────────────────────────────────
 
 class Admin(Base):
     __tablename__ = "admins"
@@ -108,19 +99,17 @@ class Student(Base):
     __tablename__ = "students"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    admin_id: Mapped[str] = mapped_column(String(36), ForeignKey("admins.id"), nullable=False, index=True)
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     roll_number: Mapped[Optional[str]] = mapped_column(String(100))
     phone: Mapped[Optional[str]] = mapped_column(String(20))
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    __table_args__ = (
-        UniqueConstraint("admin_id", "email", name="uq_student_admin_email"),
-    )
-
+    # Remove admin_id — students are global, not per-admin
     enrollments: Mapped[List["StudentClassEnrollment"]] = relationship("StudentClassEnrollment", back_populates="student")
     attempts: Mapped[List["Attempt"]] = relationship("Attempt", back_populates="student")
 
