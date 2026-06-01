@@ -1,159 +1,96 @@
-"use client";
+'use client';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import { Brain, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { useAuthStore } from '@/store/auth.store';
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import OTPModal from "@/components/shared/OTPModal";
-import { useAuthStore } from "@/store/auth.store";
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export default function LoginPage() {
   const router = useRouter();
   const { setUser, setTokens } = useAuthStore();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  // OTP state
-  const [showOTP, setShowOTP] = useState(false);
-  const [otpEmail, setOtpEmail] = useState("");
-
-  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-
-  // Step 1: Validate the password and send an OTP.
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email || !password) { toast.error('Enter email and password'); return; }
     setLoading(true);
-    setError("");
-
     try {
       const res = await fetch(`${API}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: form.email, password: form.password }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
         signal: AbortSignal.timeout(30000),
       });
-
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Login failed");
-
-      // Show the OTP modal after the email has been sent.
-      setOtpEmail(form.email);
-      setShowOTP(true);
+      if (!res.ok) throw new Error(data.detail || 'Login failed');
+      setTokens(data.access_token, data.refresh_token);
+      setUser(data.user);
+      toast.success(`Welcome back, ${data.user.full_name.split(' ')[0]}!`);
+      router.push('/admin/dashboard');
     } catch (err: any) {
-      setError(
-        err.name === "TimeoutError"
-          ? "Login timed out while sending OTP. Please try again."
-          : err.message
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Step 2: Verify the OTP and store the JWT tokens.
-  const handleOTPVerify = async (otp: string) => {
-    const res = await fetch(`${API}/auth/verify-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: otpEmail, otp, purpose: "login" }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "The OTP is incorrect");
-
-    // Save the authenticated session.
-    setTokens(data.access_token, data.refresh_token);
-    setUser(data.user);
-
-    // Redirect to the dashboard.
-    router.push("/admin/dashboard");
-  };
-
-  // OTP resend
-  const handleResend = async () => {
-    const res = await fetch(`${API}/auth/resend-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: otpEmail, purpose: "login" }),
-    });
-    if (!res.ok) throw new Error("Resend failed");
+      toast.error(err.name === 'TimeoutError' ? 'Request timed out. Try again.' : err.message);
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
+    <div className="min-h-screen bg-surface grid-bg flex items-center justify-center p-4">
+      <div className="fixed top-1/3 -left-40 w-80 h-80 bg-brand-500/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed bottom-1/3 -right-40 w-80 h-80 bg-accent-cyan/10 rounded-full blur-3xl pointer-events-none" />
+
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }} className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-white tracking-tight">
-            INTERVEX <span className="text-indigo-400">AI</span>
-          </h1>
-          <p className="text-slate-400 mt-2 text-sm">Admin Portal</p>
+          <Link href="/" className="inline-flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-cyan flex items-center justify-center shadow-[0_0_30px_rgba(91,106,245,0.4)]">
+              <Brain className="w-6 h-6 text-white" />
+            </div>
+            <span className="font-display text-2xl font-bold text-white">INTERVEX AI</span>
+          </Link>
+          <p className="text-white/40 mt-3 text-sm">Admin Portal — Sign in to your workspace</p>
         </div>
 
-        {/* Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">Admin Login</h2>
-
-          <form onSubmit={handleLogin} className="space-y-4">
+        <div className="glass-card p-8">
+          <h1 className="font-display text-2xl font-bold text-white mb-6">Welcome back</h1>
+          <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="admin@intervex.ai"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                required
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="********"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900"
-              />
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                {error}
+              <label className="block text-sm text-white/60 mb-2">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="admin@company.com" className="input-field pl-10" />
               </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold
-                hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
-                transition-all shadow-md hover:shadow-lg mt-2"
-            >
-              {loading ? "Signing in..." : "Sign In"}
+            </div>
+            <div>
+              <label className="block text-sm text-white/60 mb-2">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <input value={password} onChange={e => setPassword(e.target.value)} type={showPass ? 'text' : 'password'} placeholder="Your password" className="input-field pl-10 pr-10" />
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
+              {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
             </button>
           </form>
 
-          <p className="text-xs text-gray-400 text-center mt-4">
-            We will send an OTP to your email after you sign in.
-          </p>
+          <div className="mt-6 pt-5 border-t border-white/5 text-center text-sm text-white/40">
+            Don't have an account?{' '}
+            <Link href="/auth/register" className="text-brand-400 hover:text-brand-300 transition-colors">Create Admin Account</Link>
+          </div>
         </div>
-      </div>
 
-      {/* OTP Modal */}
-      <OTPModal
-        isOpen={showOTP}
-        email={otpEmail}
-        purpose="login"
-        onVerify={handleOTPVerify}
-        onResend={handleResend}
-        onClose={() => setShowOTP(false)}
-      />
+        <p className="text-center text-xs text-white/20 mt-6">
+          Are you a student?{' '}
+          <Link href="/join" className="text-white/40 hover:text-white/60 underline">Join via link</Link>
+        </p>
+      </motion.div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 """
-Core Configuration - SQLite + Groq + Resend Email
+Core Configuration - SQLite + Groq
 """
 import secrets
 from typing import List
@@ -33,24 +33,6 @@ class Settings(BaseSettings):
     # Super Admin
     SUPER_ADMIN_EMAIL: str = "admin@intervex.ai"
     SUPER_ADMIN_PASSWORD: str = "Admin@123!"
-
-    # ── Resend Email (free, no credit card — resend.com) ──
-    RESEND_API_KEY: str = ""                          # re_xxxxxxxxxxxxxxxx
-    RESEND_FROM_EMAIL: str = "INTERVEX AI <onboarding@resend.dev>"  # default works without custom domain
-
-    # OTP settings
-    OTP_EXPIRE_MINUTES: int = 10
-    SMTP_TIMEOUT_SECONDS: int = 15
-
-    # Keep these for backward compat (unused now)
-    GMAIL_USER: str = ""
-    GMAIL_APP_PASSWORD: str = ""
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    MAILGUN_API_KEY: str = ""
-    MAILGUN_DOMAIN: str = ""
-    MAILGUN_FROM_ADDRESS: str = ""
-    MAILGUN_API_BASE_URL: str = "https://api.mailgun.net"
 
     class Config:
         env_file = ".env"
