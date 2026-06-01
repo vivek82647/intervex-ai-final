@@ -16,7 +16,7 @@ export default function StudentJoinPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.full_name || !form.email) { setError("Name aur email required hai"); return; }
+    if (!form.full_name || !form.email) { setError("Name and email are required"); return; }
     setLoading(true);
     setError("");
 
@@ -33,7 +33,7 @@ export default function StudentJoinPage() {
         signal: AbortSignal.timeout(30000),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Join failed");
+      if (!res.ok) throw new Error(data.detail || "Failed to join session");
 
       Cookies.set("access_token", data.access_token, { expires: 1 });
       sessionStorage.setItem("student_info", JSON.stringify({
@@ -46,7 +46,7 @@ export default function StudentJoinPage() {
 
       router.push(`/student/session/${data.session_id}/instructions`);
     } catch (err: any) {
-      setError(err.name === "TimeoutError" ? "Request timeout. Try again." : err.message);
+      setError(err.name === "TimeoutError" ? "Request timed out. Please try again." : err.message);
     } finally { setLoading(false); }
   };
 
@@ -61,29 +61,29 @@ export default function StudentJoinPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Apni Details Bharo</h2>
-          <p className="text-gray-500 text-sm mb-6">Details bharke seedha test shuru karo</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Enter Your Details</h2>
+          <p className="text-gray-500 text-sm mb-6">Fill in your details to start the test</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Poora Naam *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
               <input type="text" required value={form.full_name}
                 onChange={e => setForm({ ...form, full_name: e.target.value })}
-                placeholder="Apna naam likhein"
+                placeholder="Enter your full name"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
               <input type="email" required value={form.email}
                 onChange={e => setForm({ ...form, email: e.target.value })}
-                placeholder="aapka@email.com"
+                placeholder="your@email.com"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number (Optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number <span className="text-gray-400">(Optional)</span></label>
               <input type="text" value={form.roll_number}
                 onChange={e => setForm({ ...form, roll_number: e.target.value })}
-                placeholder="Jaise: 2021CS001"
+                placeholder="e.g. 2021CS001"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900" />
             </div>
 
@@ -93,7 +93,7 @@ export default function StudentJoinPage() {
 
             <button type="submit" disabled={loading}
               className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md mt-2">
-              {loading ? "Please wait..." : "Test Shuru Karo →"}
+              {loading ? "Please wait..." : "Start Test →"}
             </button>
           </form>
         </div>
