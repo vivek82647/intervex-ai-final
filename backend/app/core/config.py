@@ -1,5 +1,5 @@
 """
-Core Configuration - SQLite + Groq + Resend
+Core Configuration - SQLite + Groq + Gmail OTP
 """
 import secrets
 from typing import List
@@ -27,14 +27,22 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    # Groq
+    # Groq AI
     GROQ_API_KEY: str = ""
 
     # Super Admin
     SUPER_ADMIN_EMAIL: str = "admin@intervex.ai"
     SUPER_ADMIN_PASSWORD: str = "Admin@123!"
 
-    # Resend Email (free — resend.com, no credit card)
+    # Gmail SMTP (OTP emails ke liye)
+    GMAIL_USER: str = ""
+    GMAIL_APP_PASSWORD: str = ""
+
+    # OTP Settings
+    OTP_EXPIRE_MINUTES: int = 10
+    SMTP_TIMEOUT_SECONDS: int = 15
+
+    # Resend (backup - unused ab)
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "INTERVEX AI <onboarding@resend.dev>"
 
