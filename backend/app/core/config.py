@@ -1,5 +1,5 @@
 """
-Core Configuration - SQLite + Groq + Gmail OTP
+Core Configuration - PostgreSQL (Neon) + Groq + Resend
 """
 import secrets
 from typing import List
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
-    # Database
+    # Database — SQLite locally, PostgreSQL on Render
     DATABASE_URL: str = "sqlite+aiosqlite:///./intervex.db"
 
     # CORS
@@ -27,22 +27,14 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    # Groq AI
+    # Groq
     GROQ_API_KEY: str = ""
 
     # Super Admin
     SUPER_ADMIN_EMAIL: str = "admin@intervex.ai"
     SUPER_ADMIN_PASSWORD: str = "Admin@123!"
 
-    # Gmail SMTP (OTP emails ke liye)
-    GMAIL_USER: str = ""
-    GMAIL_APP_PASSWORD: str = ""
-
-    # OTP Settings
-    OTP_EXPIRE_MINUTES: int = 10
-    SMTP_TIMEOUT_SECONDS: int = 15
-
-    # Resend (backup - unused ab)
+    # Resend Email
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "INTERVEX AI <onboarding@resend.dev>"
 
