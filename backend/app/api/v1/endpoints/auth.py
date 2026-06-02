@@ -108,7 +108,6 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
     if not student:
         student = Student(
             id=str(uuid_lib.uuid4()),
-            admin_id=session.admin_id,
             email=data.email,
             full_name=data.full_name,
             password_hash="",
