@@ -1,5 +1,5 @@
 """
-INTERVEX AI - Main FastAPI Application (SQLite + Groq, no Docker)
+INTERVEX AI - Main FastAPI Application
 """
 import logging
 import uuid
@@ -17,8 +17,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+async def run_migrations():
+    """Add missing columns to existing tables without dropping data"""
+    import aiosqlite
+    db_path = "./intervex.db"
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            # Check and add password_hash to students
+            cursor = await db.execute("PRAGMA table_info(students)")
+            columns = [row[1] for row in await cursor.fetchall()]
+
+            if "password_hash" not in columns:
+                await db.execute("ALTER TABLE students ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+                logger.info("✅ Added password_hash to students")
+
+            if "is_verified" not in columns:
+                await db.execute("ALTER TABLE students ADD COLUMN is_verified INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Added is_verified to students")
+
+            if "admin_id" not in columns:
+                await db.execute("ALTER TABLE students ADD COLUMN admin_id TEXT")
+                logger.info("✅ Added admin_id to students")
+
+            await db.commit()
+            logger.info("✅ Migrations complete")
+    except Exception as e:
+        logger.warning(f"Migration note: {e}")
+
+
 async def seed_super_admin():
-    """Create default super admin on first run"""
     from sqlalchemy import select
     from app.models.models import Admin
     from app.core.security import hash_password
@@ -44,10 +71,11 @@ async def seed_super_admin():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 INTERVEX AI starting (SQLite + Groq mode)...")
+    logger.info("🚀 INTERVEX AI starting...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ Database ready: intervex.db")
+    logger.info("✅ Database tables created")
+    await run_migrations()
     await seed_super_admin()
     yield
     logger.info("🛑 INTERVEX AI shutting down...")
@@ -70,13 +98,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
-
 app.include_router(api_router, prefix="/api/v1")
+
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 @app.get("/health")
-@app.get("/api/v1/health")  # Both routes work
+@app.get("/api/v1/health")
 async def health_check():
     return {
         "status": "healthy",
@@ -86,10 +114,5 @@ async def health_check():
         "ai": "Groq (free)",
     }
 
-
-# ─── Socket.IO ASGI Wrapper ───────────────────────────────────────────────────
-# NOTE: socketio.ASGIApp wraps the FastAPI app.
-# Uvicorn ko 'asgi_app' run karna hai, 'app' nahi.
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 asgi_app = socket_app
