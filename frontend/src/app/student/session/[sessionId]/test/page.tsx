@@ -52,7 +52,7 @@ export default function TestPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
   const router = useRouter();
-  const { studentId, studentName, attemptId: storedAttemptId, setSession } = useStudentStore();
+  const { studentId, studentName, attemptId: storedAttemptId, token: studentToken, setSession } = useStudentStore();
 
   // Block back button
   useEffect(() => {
@@ -128,9 +128,11 @@ export default function TestPage() {
 
   // WebSocket + anti-cheat
   useEffect(() => {
-    if (!attemptId || !studentId) return;
+    if (!studentId) return;
+    // Ensure student token is active
+    if (studentToken) Cookies.set('access_token', studentToken, { expires: 1 });
     const socket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8000', {
-      auth: { token: Cookies.get('access_token') },
+      auth: { token: studentToken || Cookies.get('access_token') },
       transports: ['websocket'],
     });
     socket.on('connect', async () => {
