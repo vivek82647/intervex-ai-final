@@ -53,8 +53,28 @@ async def start_attempt(
             raise HTTPException(status_code=400, detail="You have already submitted this test")
         if attempt.status == "terminated":
             raise HTTPException(status_code=400, detail="Your session was terminated")
-        # Return existing in-progress attempt
-        return {"attempt_id": attempt.id, "status": attempt.status, "started_at": attempt.started_at}
+        # Resume: accumulate time consumed before disconnect
+        if attempt.last_seen_at:
+            extra = int((datetime.utcnow() - attempt.last_seen_at).total_seconds())
+            # Cap at session duration so we don't over-count
+            total_allowed = session.duration_minutes * 60
+            attempt.time_consumed_seconds = min(
+                attempt.time_consumed_seconds + extra, total_allowed
+            )
+        attempt.last_seen_at = datetime.utcnow()
+        await db.commit()
+        time_remaining = max(0, session.duration_minutes * 60 - attempt.time_consumed_seconds)
+        return {
+            "attempt_id": attempt.id,
+            "status": attempt.status,
+            "started_at": attempt.started_at,
+            "question_order": attempt.question_order,
+            "duration_minutes": session.duration_minutes,
+            "max_warnings": session.max_warnings,
+            "time_consumed_seconds": attempt.time_consumed_seconds,
+            "time_remaining_seconds": time_remaining,
+            "resumed": True,
+        }
     
     # Get questions and shuffle if needed
     result = await db.execute(
@@ -73,6 +93,8 @@ async def start_attempt(
         student_id=student_id,
         status="in_progress",
         started_at=datetime.utcnow(),
+        last_seen_at=datetime.utcnow(),
+        time_consumed_seconds=0,
         question_order=question_ids,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
@@ -80,14 +102,17 @@ async def start_attempt(
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
-    
+
     return {
         "attempt_id": attempt.id,
         "status": attempt.status,
         "started_at": attempt.started_at,
         "question_order": question_ids,
         "duration_minutes": session.duration_minutes,
-        "max_warnings": session.max_warnings
+        "max_warnings": session.max_warnings,
+        "time_consumed_seconds": 0,
+        "time_remaining_seconds": session.duration_minutes * 60,
+        "resumed": False,
     }
 
 
@@ -140,6 +165,9 @@ async def save_answer(
             time_spent_seconds=data.get("time_spent_seconds"),
         )
         db.add(answer)
+
+    # Heartbeat: update last_seen_at so resume knows exact disconnect time
+    attempt.last_seen_at = datetime.utcnow()
     
     await db.commit()
     return {"success": True}
@@ -325,9 +353,14 @@ async def submit_attempt(
             "performance_level": "Average"
         }
     
-    # Update attempt
+    # Accurate time: consumed before + time since last reconnect
     now = datetime.utcnow()
-    time_taken = int((now - attempt.started_at).total_seconds()) if attempt.started_at else 0
+    if attempt.last_seen_at:
+        since_reconnect = int((now - attempt.last_seen_at).total_seconds())
+        total_allowed = session.duration_minutes * 60 if session else 999999
+        time_taken = min(attempt.time_consumed_seconds + since_reconnect, total_allowed)
+    else:
+        time_taken = int((now - attempt.started_at).total_seconds()) if attempt.started_at else 0
     
     attempt.status = "submitted"
     attempt.submitted_at = now

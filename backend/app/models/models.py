@@ -218,6 +218,10 @@ class Attempt(Base):
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     time_taken_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
+    # Resume support: tracks actual time consumed before disconnect
+    time_consumed_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
     total_score: Mapped[Optional[float]] = mapped_column(Float)
     max_score: Mapped[Optional[float]] = mapped_column(Float)
     percentage: Mapped[Optional[float]] = mapped_column(Float)
