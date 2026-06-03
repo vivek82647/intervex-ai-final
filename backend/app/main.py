@@ -39,16 +39,6 @@ async def run_migrations():
                 await db.execute("ALTER TABLE students ADD COLUMN admin_id TEXT")
                 logger.info("✅ Added admin_id to students")
 
-            # Resume feature columns
-            cursor = await db.execute("PRAGMA table_info(attempts)")
-            attempt_cols = [row[1] for row in await cursor.fetchall()]
-            if "time_consumed_seconds" not in attempt_cols:
-                await db.execute("ALTER TABLE attempts ADD COLUMN time_consumed_seconds INTEGER NOT NULL DEFAULT 0")
-                logger.info("✅ Added time_consumed_seconds to attempts")
-            if "last_seen_at" not in attempt_cols:
-                await db.execute("ALTER TABLE attempts ADD COLUMN last_seen_at DATETIME")
-                logger.info("✅ Added last_seen_at to attempts")
-
             await db.commit()
             logger.info("✅ Migrations complete")
     except Exception as e:
