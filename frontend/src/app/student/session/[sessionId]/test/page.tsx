@@ -69,6 +69,8 @@ export default function TestPage() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [warningCount, setWarningCount] = useState(0);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [fsWarningShown, setFsWarningShown] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [language, setLanguage] = useState('python');
@@ -198,11 +200,13 @@ export default function TestPage() {
     const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
     if (!isMobile) enterFullscreen();
 
-    // Re-enter fullscreen if student exits
+    // Fullscreen change — show blocking overlay
     const onFullscreenChange = () => {
-      if (!document.fullscreenElement && !submitted) {
+      const inFs = !!document.fullscreenElement || !!(document as any).webkitFullscreenElement;
+      setIsFullscreen(inFs);
+      if (!inFs && !submitted) {
         reportViolation('fullscreen_exit', {});
-        if (!isMobile) setTimeout(enterFullscreen, 500);
+        setFsWarningShown(true);
       }
     };
 
@@ -232,9 +236,12 @@ export default function TestPage() {
       if (e.ctrlKey && e.key === 'r') { e.preventDefault(); return false; }
     };
 
-    // ── BLOCK BACK NAVIGATION ──────────────────────────────────────────────────
-    window.history.pushState(null, '', window.location.href);
-    const onPopState = () => {
+    // ── BLOCK BACK NAVIGATION (mobile + desktop) ──────────────────────────────
+    // Push multiple states to make back button harder
+    for (let i = 0; i < 10; i++) window.history.pushState(null, '', window.location.href);
+    const onPopState = (e: PopStateEvent) => {
+      e.preventDefault();
+      // Keep pushing state to prevent going back
       window.history.pushState(null, '', window.location.href);
       reportViolation('tab_switch', { method: 'back_button' });
     };
@@ -588,6 +595,31 @@ export default function TestPage() {
           </div>
         </aside>
       </div>
+      {/* ── Fullscreen Exit Overlay ── */}
+      {!isFullscreen && !submitted && (
+        <div className="fixed inset-0 bg-black z-[9999] flex flex-col items-center justify-center px-6 text-center"
+          style={{ backdropFilter: 'blur(20px)' }}>
+          <div className="text-6xl mb-6">⚠️</div>
+          <h2 className="text-white text-2xl font-black mb-3">Test Paused</h2>
+          <p className="text-white/70 text-base mb-2">You exited fullscreen mode.</p>
+          <p className="text-white/50 text-sm mb-8">The test is locked until you return to fullscreen.</p>
+          {fsWarningShown && (
+            <p className="text-orange-400 text-sm mb-6">⚡ A violation has been recorded.</p>
+          )}
+          <button
+            onClick={() => {
+              const el = document.documentElement;
+              if (el.requestFullscreen) el.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+              else if ((el as any).webkitRequestFullscreen) { (el as any).webkitRequestFullscreen(); setIsFullscreen(true); }
+            }}
+            className="bg-white text-black font-bold px-8 py-4 rounded-2xl text-lg hover:bg-gray-100 transition-all"
+          >
+            🔒 Return to Test
+          </button>
+          <p className="text-white/20 text-xs mt-6">Do not close this tab. Your test is still active.</p>
+        </div>
+      )}
+
       {/* ── Submit Confirmation Modal ── */}
       {showSubmitModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center px-4">
