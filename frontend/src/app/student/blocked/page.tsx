@@ -1,21 +1,29 @@
 'use client';
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { XCircle, Mail, Send, CheckCircle } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8000';
 
 function BlockedContent() {
   const searchParams = useSearchParams();
   const reason = searchParams.get('reason') || 'terminated';
+  // Read session/student context stored before termination
+  const sessionId  = searchParams.get('session_id')  || (typeof window !== 'undefined' ? localStorage.getItem('session_id')  ?? '' : '');
+  const studentId  = searchParams.get('student_id')  || (typeof window !== 'undefined' ? localStorage.getItem('student_id')  ?? '' : '');
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [message,  setMessage]  = useState('');
+  const [sent,     setSent]     = useState(false);
+  const [sending,  setSending]  = useState(false);
+  const [error,    setError]    = useState('');
 
+  const socketRef = useRef<Socket | null>(null);
+
+  // Prevent navigation away from this page
   useEffect(() => {
     window.history.pushState(null, '', window.location.href);
     const block = () => window.history.pushState(null, '', window.location.href);
@@ -23,22 +31,44 @@ function BlockedContent() {
     return () => window.removeEventListener('popstate', block);
   }, []);
 
+  // Connect socket so we can emit request_rejoin
+  useEffect(() => {
+    if (!sessionId) return;
+    const socket = io(WS_URL, { transports: ['websocket'], reconnection: false });
+    socketRef.current = socket;
+    return () => { socket.disconnect(); };
+  }, [sessionId]);
+
   const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email) { setError('Name and email required'); return; }
+    setError('');
     setSending(true);
+
     try {
+      // 1. REST call (existing behaviour)
       await fetch(`${API}/auth/student/rejoin-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, message, reason }),
       });
-      setSent(true);
     } catch {
-      setSent(true);
-    } finally {
-      setSending(false);
+      // ignore REST errors — WS notification still matters
     }
+
+    // 2. WebSocket emit so monitor page gets real-time notification
+    if (socketRef.current && sessionId) {
+      socketRef.current.emit('request_rejoin', {
+        session_id:   sessionId,
+        student_id:   studentId  || email,   // fallback to email if id not stored
+        student_name: name,
+        email,                                // Fix 2 companion: send email along
+        reason:       message || reason,
+      });
+    }
+
+    setSent(true);
+    setSending(false);
   };
 
   const isIP = reason === 'ip';
@@ -73,16 +103,26 @@ function BlockedContent() {
             </h3>
             <p className="text-white/40 text-xs mb-4">Send a request to your administrator for a new session.</p>
             <form onSubmit={handleRequest} className="space-y-3">
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Your Full Name" required
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400" />
-              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Your Email" required
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400" />
-              <textarea value={message} onChange={e => setMessage(e.target.value)}
+              <input
+                value={name} onChange={e => setName(e.target.value)}
+                placeholder="Your Full Name" required
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400"
+              />
+              <input
+                value={email} onChange={e => setEmail(e.target.value)}
+                type="email" placeholder="Your Email" required
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400"
+              />
+              <textarea
+                value={message} onChange={e => setMessage(e.target.value)}
                 placeholder="Explain why you need access (optional)..." rows={3}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400 resize-none" />
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400 resize-none"
+              />
               {error && <p className="text-red-400 text-xs">{error}</p>}
-              <button type="submit" disabled={sending}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+              <button
+                type="submit" disabled={sending}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
                 <Send className="w-4 h-4" />
                 {sending ? 'Sending...' : 'Send Request to Admin'}
               </button>
@@ -104,7 +144,11 @@ function BlockedContent() {
 
 export default function BlockedPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center"><div className="w-8 h-8 border-2 border-red-400 border-t-transparent rounded-full animate-spin" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
       <BlockedContent />
     </Suspense>
   );

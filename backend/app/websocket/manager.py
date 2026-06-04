@@ -62,6 +62,7 @@ async def student_join(sid, data):
     attempt_id = data.get("attempt_id")
     ip_address = data.get("ip_address", "Unknown")
     user_agent = data.get("user_agent", "")
+    email = data.get("email", "")
 
     if not all([session_id, student_id, student_name]):
         await sio.emit("error", {"message": "Missing required fields"}, to=sid)
@@ -96,6 +97,7 @@ async def student_join(sid, data):
         "session_id": session_id,
         "student_id": student_id,
         "student_name": student_name,
+        "email": email,
         "attempt_id": attempt_id,
         "ip_address": ip_address,
         "user_agent": user_agent,
@@ -109,6 +111,7 @@ async def student_join(sid, data):
     active_sessions[session_id][student_id] = {
         "sid": sid,
         "student_name": student_name,
+        "email": email,
         "attempt_id": attempt_id,
         "ip_address": ip_address,
         "user_agent": user_agent,
@@ -125,6 +128,7 @@ async def student_join(sid, data):
     await notify_admins(session_id, "student_joined", {
         "student_id": student_id,
         "student_name": student_name,
+        "email": email,
         "ip_address": ip_address,
         "user_agent": user_agent,
         "timestamp": datetime.utcnow().isoformat()
@@ -235,6 +239,7 @@ async def request_rejoin(sid, data):
     rejoin_requests[session_id][student_id] = {
         "student_id": student_id,
         "student_name": student_name,
+        "email": data.get("email", ""),
         "reason": reason,
         "sid": sid,
         "requested_at": datetime.utcnow().isoformat(),
@@ -245,6 +250,7 @@ async def request_rejoin(sid, data):
     await notify_admins(session_id, "rejoin_requested", {
         "student_id": student_id,
         "student_name": student_name,
+        "email": data.get("email", ""),
         "reason": reason,
         "timestamp": datetime.utcnow().isoformat()
     })
