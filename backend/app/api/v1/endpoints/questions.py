@@ -11,7 +11,7 @@ from sqlalchemy import select, func, or_, delete as sql_delete
 
 from app.core.database import get_db
 from app.core.security import require_admin
-from app.models.models import Question, SessionQuestion
+from app.models.models import Question, SessionQuestion, Answer
 from app.schemas.schemas import QuestionCreate, QuestionOut, AIGenerateRequest
 from app.services.ai_service import ai_service
 
@@ -260,7 +260,7 @@ async def delete_question(
     current_user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a question — removes session_questions references first to avoid FK violation"""
+    """Delete a question — clears all FK references first to avoid IntegrityError"""
     # Verify the question exists and belongs to this admin
     result = await db.execute(
         select(Question).where(
@@ -272,12 +272,17 @@ async def delete_question(
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    # Delete FK-referencing rows in session_questions first
+    # 1. Delete answers that reference this question
+    await db.execute(
+        sql_delete(Answer).where(Answer.question_id == question_id)
+    )
+
+    # 2. Delete session_questions that reference this question
     await db.execute(
         sql_delete(SessionQuestion).where(SessionQuestion.question_id == question_id)
     )
 
-    # Now safe to delete the question
+    # 3. Now safe to delete the question itself
     await db.delete(question)
     await db.commit()
     return {"success": True}
