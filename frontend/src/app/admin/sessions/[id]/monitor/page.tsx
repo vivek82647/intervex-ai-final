@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   Activity, Users, CheckCircle, AlertTriangle, XCircle,
-  ArrowLeft, Wifi, WifiOff, Monitor, Globe, UserCheck, UserX
+  ArrowLeft, Wifi, WifiOff, Monitor, Globe, UserCheck, UserX, Mail
 } from 'lucide-react';
 import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
@@ -32,6 +32,7 @@ function getDuplicateIPs(students: LiveStudent[]): Set<string> {
 interface RejoinRequest {
   student_id: string;
   student_name: string;
+  email?: string;
   reason: string;
   requested_at: string;
 }
@@ -83,7 +84,8 @@ export default function MonitorPage() {
       setStudents(prev => {
         const updated = { ...prev, [data.student_id]: {
           ...prev[data.student_id], student_id: data.student_id,
-          student_name: data.student_name, ip_address: data.ip_address || 'Unknown',
+          student_name: data.student_name, email: data.email || '',
+          ip_address: data.ip_address || 'Unknown',
           user_agent: data.user_agent || '', status: 'joined', warning_count: 0,
           progress: 0, connected: true, joined_at: data.timestamp
         }};
@@ -142,7 +144,7 @@ export default function MonitorPage() {
       setRejoinRequests(prev => {
         const exists = prev.find(r => r.student_id === data.student_id);
         if (exists) return prev;
-        return [...prev, { student_id: data.student_id, student_name: data.student_name, reason: data.reason, requested_at: data.timestamp }];
+        return [...prev, { student_id: data.student_id, student_name: data.student_name, email: data.email || '', reason: data.reason, requested_at: data.timestamp }];
       });
       addAlert({ type: 'rejoin', message: `${data.student_name} requested rejoin`, ts: data.timestamp, level: 'warning' });
       toast(`🔔 ${data.student_name} wants to rejoin!`, { icon: '🙋', duration: 5000 });
@@ -239,6 +241,11 @@ export default function MonitorPage() {
               <p className="text-accent-amber font-medium text-sm flex items-center gap-2">
                 🙋 <strong>{req.student_name}</strong> wants to rejoin
               </p>
+              {req.email && (
+                <p className="text-white/30 text-xs mt-0.5 truncate flex items-center gap-1">
+                  <Mail className="w-3 h-3 flex-shrink-0" />{req.email}
+                </p>
+              )}
               {req.reason && req.reason !== 'No reason provided' && (
                 <p className="text-white/40 text-xs mt-0.5 truncate">"{req.reason}"</p>
               )}
@@ -305,6 +312,13 @@ export default function MonitorPage() {
                         <span className="font-mono truncate">{student.ip_address || 'Unknown'}</span>
                         {isDuplicateIP && <span className="text-accent-rose font-medium ml-1">⚠ Shared IP</span>}
                       </div>
+
+                      {student.email && (
+                        <div className="flex items-center gap-1.5 text-xs text-white/25 mb-2 truncate">
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{student.email}</span>
+                        </div>
+                      )}
 
                       {student.user_agent && (
                         <div className="flex items-center gap-1.5 text-xs text-white/20 mb-2 truncate">
