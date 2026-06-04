@@ -3,7 +3,7 @@ Attempts Endpoints - Student test-taking flow
 """
 import uuid
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,17 +29,17 @@ async def start_attempt(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Student starts a test attempt"""
+    """Student starts a test attempt — reconnect safe"""
     session_id = data.get("session_id") or current_user.get("session_id")
     student_id = current_user["user_id"]
-    
-    # Verify session is active
+
+    # Session verify karo
     result = await db.execute(select(DBSession).where(DBSession.id == session_id))
     session = result.scalar_one_or_none()
     if not session or session.status != "active":
         raise HTTPException(status_code=400, detail="Session not available")
-    
-    # Check for existing attempt
+
+    # Existing attempt check karo
     existing = await db.execute(
         select(Attempt).where(
             Attempt.session_id == session_id,
@@ -47,32 +47,78 @@ async def start_attempt(
         )
     )
     attempt = existing.scalar_one_or_none()
-    
+
     if attempt:
         if attempt.status == "submitted":
             raise HTTPException(status_code=400, detail="You have already submitted this test")
         if attempt.status == "terminated":
-            raise HTTPException(status_code=400, detail="Your session was terminated")
-        # Return existing in-progress attempt
-        return {"attempt_id": attempt.id, "status": attempt.status, "started_at": attempt.started_at}
-    
-    # Get questions and shuffle if needed
+            if attempt.termination_reason != "REJOIN_APPROVED":
+                raise HTTPException(status_code=403, detail="TERMINATED")
+            # Admin ne approve kiya — reset karo
+            attempt.status = "in_progress"
+            attempt.termination_reason = None
+            attempt.warning_count = 0
+            attempt.started_at = datetime.utcnow()
+            await db.commit()
+
+        # ── RECONNECT LOGIC ──────────────────────────────────────────────────
+        # Kitna time bacha hai calculate karo
+        total_seconds = session.duration_minutes * 60
+        elapsed_seconds = 0
+
+        if attempt.started_at:
+            elapsed_seconds = int((datetime.utcnow() - attempt.started_at).total_seconds())
+
+        time_remaining_seconds = max(0, total_seconds - elapsed_seconds)
+
+        # Time khatam ho gaya toh auto-submit
+        if time_remaining_seconds <= 0:
+            if attempt.status == "in_progress":
+                attempt.status = "submitted"
+                attempt.submitted_at = datetime.utcnow()
+                attempt.time_taken_seconds = total_seconds
+                if attempt.total_score is None:
+                    attempt.total_score = 0.0
+                    attempt.max_score = session.total_marks
+                    attempt.percentage = 0.0
+                await db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="Time is up! Your test has been auto-submitted."
+            )
+        # ────────────────────────────────────────────────────────────────────
+
+        return {
+            "attempt_id": attempt.id,
+            "status": attempt.status,
+            "started_at": attempt.started_at,
+            "question_order": attempt.question_order,
+            "duration_minutes": session.duration_minutes,
+            "max_warnings": session.max_warnings,
+            # ── Yeh naye fields hain — frontend ko time_remaining_seconds use karna hai ──
+            "time_remaining_seconds": time_remaining_seconds,
+            "elapsed_seconds": elapsed_seconds,
+            "reconnected": True,  # frontend ko pata chale ke reconnect hua
+        }
+
+    # ── NAYA ATTEMPT — pehli baar aa raha hai ────────────────────────────────
     result = await db.execute(
-        select(SessionQuestion).where(SessionQuestion.session_id == session_id)
+        select(SessionQuestion)
+        .where(SessionQuestion.session_id == session_id)
         .order_by(SessionQuestion.order)
     )
     session_questions = result.scalars().all()
     question_ids = [sq.question_id for sq in session_questions]
-    
+
     if session.shuffle_questions:
         random.shuffle(question_ids)
-    
+
     attempt = Attempt(
         id=str(uuid.uuid4()),
         session_id=session_id,
         student_id=student_id,
         status="in_progress",
-        started_at=datetime.utcnow(),
+        started_at=datetime.utcnow(),  # Exact time record karo
         question_order=question_ids,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
@@ -80,14 +126,17 @@ async def start_attempt(
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
-    
+
     return {
         "attempt_id": attempt.id,
         "status": attempt.status,
         "started_at": attempt.started_at,
         "question_order": question_ids,
         "duration_minutes": session.duration_minutes,
-        "max_warnings": session.max_warnings
+        "max_warnings": session.max_warnings,
+        "time_remaining_seconds": session.duration_minutes * 60,  # Full time
+        "elapsed_seconds": 0,
+        "reconnected": False,
     }
 
 
@@ -99,7 +148,6 @@ async def save_answer(
     db: AsyncSession = Depends(get_db)
 ):
     """Save/update an answer for a question"""
-    # Verify attempt
     result = await db.execute(
         select(Attempt).where(
             Attempt.id == attempt_id,
@@ -109,10 +157,9 @@ async def save_answer(
     attempt = result.scalar_one_or_none()
     if not attempt or attempt.status not in ("in_progress",):
         raise HTTPException(status_code=400, detail="Invalid attempt")
-    
+
     question_id = data.get("question_id")
-    
-    # Check for existing answer
+
     existing_ans = await db.execute(
         select(Answer).where(
             Answer.attempt_id == attempt_id,
@@ -120,9 +167,8 @@ async def save_answer(
         )
     )
     answer = existing_ans.scalar_one_or_none()
-    
+
     if answer:
-        # Update existing
         answer.selected_option = data.get("selected_option")
         answer.text_answer = data.get("text_answer")
         answer.code_answer = data.get("code_answer")
@@ -140,7 +186,7 @@ async def save_answer(
             time_spent_seconds=data.get("time_spent_seconds"),
         )
         db.add(answer)
-    
+
     await db.commit()
     return {"success": True}
 
@@ -162,16 +208,15 @@ async def run_code(
     attempt = result.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
-    
+
     question_id = data.get("question_id")
     code = data.get("code", "")
     language = data.get("language", "python")
     stdin = data.get("stdin", "")
-    
-    # Get question test cases
+
     q_result = await db.execute(select(Question).where(Question.id == question_id))
     question = q_result.scalar_one_or_none()
-    
+
     if question and question.test_cases:
         visible_cases = [tc for tc in question.test_cases if not tc.get("is_hidden")]
         result = await code_service.run_test_cases(code, language, visible_cases)
@@ -198,7 +243,7 @@ async def record_warning(
     attempt = result.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
-    
+
     warning = Warning(
         id=str(uuid.uuid4()),
         attempt_id=attempt_id,
@@ -208,7 +253,7 @@ async def record_warning(
     db.add(warning)
     attempt.warning_count += 1
     await db.commit()
-    
+
     return {"warning_count": attempt.warning_count}
 
 
@@ -232,27 +277,24 @@ async def submit_attempt(
         raise HTTPException(status_code=400, detail="Already submitted")
     if attempt.status == "terminated":
         raise HTTPException(status_code=403, detail="Your session was terminated. You cannot submit.")
-    
-    # Get session
+
     session_result = await db.execute(select(DBSession).where(DBSession.id == attempt.session_id))
     session = session_result.scalar_one_or_none()
-    
-    # Get answers
+
     answers_result = await db.execute(
         select(Answer, Question)
         .join(Question, Answer.question_id == Question.id)
         .where(Answer.attempt_id == attempt_id)
     )
     answer_rows = answers_result.all()
-    
+
     total_score = 0.0
     max_score = session.total_marks if session else 0.0
     topic_scores: dict = {}
-    
-    # Evaluate each answer
+
     for answer, question in answer_rows:
         marks_earned = 0.0
-        
+
         if question.type == "mcq":
             if answer.selected_option:
                 options = question.options or []
@@ -264,7 +306,7 @@ async def submit_attempt(
                 elif question.negative_marks > 0:
                     marks_earned = -question.negative_marks
                 answer.marks_awarded = marks_earned
-        
+
         elif question.type == "descriptive":
             if answer.text_answer:
                 try:
@@ -282,7 +324,7 @@ async def submit_attempt(
                 except Exception:
                     marks_earned = 0
                 answer.marks_awarded = marks_earned
-        
+
         elif question.type == "coding":
             if answer.code_answer and question.test_cases:
                 try:
@@ -300,14 +342,13 @@ async def submit_attempt(
                 except Exception:
                     marks_earned = 0
                 answer.marks_awarded = marks_earned
-        
+
         total_score += marks_earned
         topic_scores[question.topic] = topic_scores.get(question.topic, 0) + marks_earned
-    
-    # Generate overall AI feedback
+
     student_result = await db.execute(select(Student).where(Student.id == attempt.student_id))
     student = student_result.scalar_one_or_none()
-    
+
     try:
         feedback = await ai_service.generate_overall_feedback(
             student_name=student.full_name if student else "Student",
@@ -324,11 +365,10 @@ async def submit_attempt(
             "weaknesses": [],
             "performance_level": "Average"
         }
-    
-    # Update attempt
+
     now = datetime.utcnow()
     time_taken = int((now - attempt.started_at).total_seconds()) if attempt.started_at else 0
-    
+
     attempt.status = "submitted"
     attempt.submitted_at = now
     attempt.time_taken_seconds = time_taken
@@ -338,9 +378,9 @@ async def submit_attempt(
     attempt.ai_feedback = feedback
     attempt.strengths = feedback.get("strengths", [])
     attempt.weaknesses = feedback.get("weaknesses", [])
-    
+
     await db.commit()
-    
+
     return {
         "success": True,
         "score": attempt.total_score,
@@ -362,14 +402,13 @@ async def get_attempt_result(
     attempt = result.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
-    
-    # Get answers with questions
+
     answers_result = await db.execute(
         select(Answer, Question)
         .join(Question, Answer.question_id == Question.id)
         .where(Answer.attempt_id == attempt_id)
     )
-    
+
     answers_data = []
     for answer, question in answers_result.all():
         answers_data.append({
@@ -390,14 +429,13 @@ async def get_attempt_result(
             "test_cases_passed": answer.test_cases_passed,
             "test_cases_total": answer.test_cases_total,
         })
-    
-    # Get warnings
+
     warnings_result = await db.execute(
         select(Warning).where(Warning.attempt_id == attempt_id)
     )
-    warnings = [{"type": w.type, "timestamp": w.timestamp, "details": w.details} 
+    warnings = [{"type": w.type, "timestamp": w.timestamp, "details": w.details}
                 for w in warnings_result.scalars().all()]
-    
+
     return {
         "attempt_id": attempt.id,
         "status": attempt.status,

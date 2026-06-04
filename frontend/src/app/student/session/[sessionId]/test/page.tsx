@@ -33,7 +33,7 @@ function useVoiceInput(onResult: (text: string) => void) {
 
 function useVoiceOutput() {
   const [speaking, setSpeaking] = useState(false);
-  const [enabled, setEnabled] = useState(false); // off by default for clean UI
+  const [enabled, setEnabled] = useState(false);
   const speak = useCallback((text: string) => {
     if (!enabled) return;
     window.speechSynthesis.cancel();
@@ -45,7 +45,6 @@ function useVoiceOutput() {
   return { speaking, enabled, setEnabled, speak, stop };
 }
 
-// ─── Q Status ─────────────────────────────────────────────────────────────────
 type QStatus = 'not-visited' | 'answered' | 'marked' | 'answered-marked' | 'visited';
 
 export default function TestPage() {
@@ -76,6 +75,7 @@ export default function TestPage() {
   const [running, setRunning] = useState(false);
   const [maxWarnings, setMaxWarnings] = useState(3);
   const [sessionTitle, setSessionTitle] = useState('');
+  const [reconnected, setReconnected] = useState(false); // ← NAYA
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<NodeJS.Timeout>();
   const hasLoaded = useRef(false);
@@ -91,33 +91,62 @@ export default function TestPage() {
     }
   });
 
-  // Load
+  // ─── Load ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (hasLoaded.current) return;
     hasLoaded.current = true;
     const init = async () => {
       try {
         const startRes = await attemptApi.start({ session_id: sessionId });
-        if (startRes.data.status === 'terminated') { router.replace('/student/terminated'); return; }
-        if (startRes.data.status === 'submitted') { router.replace(`/student/result/${startRes.data.attempt_id}`); return; }
+        const data = startRes.data;
+
+        if (data.status === 'terminated') { router.replace('/student/terminated'); return; }
+        if (data.status === 'submitted') { router.replace(`/student/result/${data.attempt_id}`); return; }
+
         const qRes = await sessionApi.getQuestions(sessionId);
         setQuestions(qRes.data);
-        setSessionTitle(startRes.data.session_title || 'Assessment');
-        setAttemptId(startRes.data.attempt_id);
-        setSession({ attemptId: startRes.data.attempt_id });
-        const dur = startRes.data.duration_minutes || 60;
-        setTimeLeft(dur * 60);
-        if (startRes.data.max_warnings) setMaxWarnings(startRes.data.max_warnings);
+        setSessionTitle(data.session_title || 'Assessment');
+        setAttemptId(data.attempt_id);
+        setSession({ attemptId: data.attempt_id });
+        if (data.max_warnings) setMaxWarnings(data.max_warnings);
+
+        // ── TIMER FIX ──────────────────────────────────────────────────────────
+        // Server se time_remaining_seconds aata hai — wahi use karo
+        // Agar reconnect hua toh remaining time milega, nahi toh full duration
+        if (data.time_remaining_seconds !== undefined) {
+          setTimeLeft(data.time_remaining_seconds);
+        } else {
+          // Fallback: purana behavior
+          setTimeLeft((data.duration_minutes || 60) * 60);
+        }
+
+        // Reconnect toast
+        if (data.reconnected) {
+          setReconnected(true);
+          const mins = Math.floor((data.time_remaining_seconds || 0) / 60);
+          const secs = (data.time_remaining_seconds || 0) % 60;
+          toast.success(
+            `Welcome back! Time remaining: ${mins}m ${secs}s`,
+            { duration: 5000, icon: '🔄' }
+          );
+        }
+        // ──────────────────────────────────────────────────────────────────────
+
       } catch (err: any) {
         const detail = err?.response?.data?.detail || '';
         if (detail.includes('terminated')) { router.replace('/student/terminated'); return; }
+        if (detail.includes('Time is up')) {
+          toast.error('Time is up! Your test has been auto-submitted.');
+          router.replace(`/student/result/${storedAttemptId}`);
+          return;
+        }
         toast.error(detail || 'Failed to start test');
       }
     };
     init();
   }, [sessionId]);
 
-  // Timer
+  // ─── Timer ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (timeLeft <= 0 || submitted) return;
     timerRef.current = setTimeout(() => {
@@ -126,26 +155,21 @@ export default function TestPage() {
     return () => clearTimeout(timerRef.current);
   }, [timeLeft, submitted]);
 
-  // WebSocket + anti-cheat
+  // ─── WebSocket + anti-cheat ───────────────────────────────────────────────────
   useEffect(() => {
     if (!studentId) return;
-    // Ensure student token is active
     if (studentToken) Cookies.set('access_token', studentToken, { expires: 1 });
     const socket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8000', {
       auth: { token: studentToken || Cookies.get('access_token') },
       transports: ['websocket'],
     });
     socket.on('connect', async () => {
-      // Fetch public IP before joining
       let ip = 'Unknown';
       try { const r = await fetch('https://api.ipify.org?format=json'); const d = await r.json(); ip = d.ip; } catch {}
       socket.emit('student_join', {
-        session_id: sessionId,
-        student_id: studentId,
-        student_name: studentName,
-        attempt_id: attemptId,
-        ip_address: ip,
-        user_agent: navigator.userAgent,
+        session_id: sessionId, student_id: studentId,
+        student_name: studentName, attempt_id: attemptId,
+        ip_address: ip, user_agent: navigator.userAgent,
       });
     });
     socket.on('warning_issued', ({ count, message }: any) => { setWarningCount(count); toast.error(message, { duration: 4000 }); });
@@ -253,11 +277,7 @@ export default function TestPage() {
 
   const currentQ = questions[currentIdx];
   const isLowTime = timeLeft < 300 && timeLeft > 0;
-
-  const answered = Object.keys(answers).filter(id => {
-    const a = answers[id];
-    return a && (a.selected_option || a.text_answer || a.code_answer);
-  }).length;
+  const answered = Object.keys(answers).filter(id => { const a = answers[id]; return a && (a.selected_option || a.text_answer || a.code_answer); }).length;
   const markedCount = marked.size;
   const notVisited = questions.length - answered - markedCount;
 
@@ -274,6 +294,15 @@ export default function TestPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" style={{ fontFamily: "'Segoe UI', sans-serif" }}>
+      {/* Reconnect Banner */}
+      {reconnected && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center">
+          <span className="text-amber-700 text-sm font-medium">
+            🔄 Session resumed — timer continues from where you left off
+          </span>
+        </div>
+      )}
+
       {/* Top Bar */}
       <header className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3">
@@ -307,17 +336,11 @@ export default function TestPage() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        {/* Main Content */}
         <main className="flex-1 flex flex-col min-w-0">
-          {/* Question header */}
           <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-500">Question <span className="font-semibold text-gray-800">{currentIdx + 1}</span> of {questions.length}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                currentQ.type === 'mcq' ? 'bg-blue-50 text-blue-600' :
-                currentQ.type === 'coding' ? 'bg-cyan-50 text-cyan-600' :
-                'bg-green-50 text-green-600'
-              }`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${currentQ.type === 'mcq' ? 'bg-blue-50 text-blue-600' : currentQ.type === 'coding' ? 'bg-cyan-50 text-cyan-600' : 'bg-green-50 text-green-600'}`}>
                 {currentQ.type === 'mcq' ? 'Multiple Choice' : currentQ.type === 'coding' ? 'Coding' : 'Descriptive'}
               </span>
               <span className="text-xs text-gray-400 capitalize">{currentQ.difficulty}</span>
@@ -325,28 +348,22 @@ export default function TestPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400">{currentQ.marks} mark{currentQ.marks !== 1 ? 's' : ''}</span>
               <button onClick={() => toggleMark(currentQ.id)}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                  marked.has(currentQ.id) ? 'bg-purple-50 border-purple-300 text-purple-600' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-purple-300'
-                }`}>
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${marked.has(currentQ.id) ? 'bg-purple-50 border-purple-300 text-purple-600' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-purple-300'}`}>
                 {marked.has(currentQ.id) ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
                 {marked.has(currentQ.id) ? 'Marked' : 'Mark for Review'}
               </button>
-              {/* Voice controls */}
-              <button onClick={() => voiceOut.setEnabled((e: boolean) => !e)} title={voiceOut.enabled ? 'Mute' : 'Read aloud'}
+              <button onClick={() => voiceOut.setEnabled((e: boolean) => !e)}
                 className={`p-1.5 rounded-lg border text-xs transition-all ${voiceOut.enabled ? 'bg-blue-50 border-blue-200 text-blue-500' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
                 {voiceOut.enabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
 
-          {/* Question + Answer area */}
           <div className="flex-1 overflow-y-auto p-5">
-            {/* Question text */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 shadow-sm">
               <p className="text-gray-800 text-base leading-relaxed whitespace-pre-wrap">{currentQ.content}</p>
             </div>
 
-            {/* MCQ */}
             {currentQ.type === 'mcq' && (
               <div className="space-y-3">
                 {(currentQ.options || []).map((opt: any, i: number) => {
@@ -354,12 +371,8 @@ export default function TestPage() {
                   const letters = ['A', 'B', 'C', 'D', 'E'];
                   return (
                     <button key={opt.id} onClick={() => saveAnswer(currentQ.id, { selected_option: opt.id })}
-                      className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${
-                        selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30'
-                      }`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-all ${
-                        selected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
-                      }`}>
+                      className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30'}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-all ${selected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
                         {letters[i] || opt.id.toUpperCase()}
                       </div>
                       <span className={`text-sm ${selected ? 'text-blue-800 font-medium' : 'text-gray-700'}`}>{opt.text}</span>
@@ -369,15 +382,12 @@ export default function TestPage() {
               </div>
             )}
 
-            {/* Descriptive */}
             {currentQ.type === 'descriptive' && (
               <div className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden shadow-sm">
                 <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-100">
                   <span className="text-xs text-gray-400">Type your answer below or use voice</span>
                   <button onClick={voiceIn.listening ? voiceIn.stop : voiceIn.start}
-                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                      voiceIn.listening ? 'bg-red-50 border-red-300 text-red-500 animate-pulse' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-blue-300'
-                    }`}>
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${voiceIn.listening ? 'bg-red-50 border-red-300 text-red-500 animate-pulse' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-blue-300'}`}>
                     {voiceIn.listening ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                     {voiceIn.listening ? 'Stop' : 'Speak'}
                   </button>
@@ -395,7 +405,6 @@ export default function TestPage() {
               </div>
             )}
 
-            {/* Coding */}
             {currentQ.type === 'coding' && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -440,13 +449,11 @@ export default function TestPage() {
             )}
           </div>
 
-          {/* Bottom nav */}
           <div className="bg-white border-t border-gray-200 px-5 py-3 flex items-center justify-between">
             <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0}
               className="flex items-center gap-2 border border-gray-200 hover:border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
               <ChevronLeft className="w-4 h-4" /> Previous
             </button>
-
             <div className="flex items-center gap-2">
               {currentQ.type === 'mcq' && answers[currentQ.id]?.selected_option && (
                 <button onClick={() => clearResponse(currentQ.id)}
@@ -455,7 +462,6 @@ export default function TestPage() {
                 </button>
               )}
             </div>
-
             {currentIdx < questions.length - 1 ? (
               <button onClick={() => setCurrentIdx(currentIdx + 1)}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -470,7 +476,6 @@ export default function TestPage() {
           </div>
         </main>
 
-        {/* Right Sidebar — Question Palette */}
         <aside className="w-64 bg-white border-l border-gray-200 flex flex-col hidden lg:flex">
           <div className="p-4 border-b border-gray-100">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Palette</p>
@@ -486,8 +491,6 @@ export default function TestPage() {
               })}
             </div>
           </div>
-
-          {/* Legend */}
           <div className="p-4 border-b border-gray-100">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Legend</p>
             <div className="space-y-2">
@@ -506,8 +509,6 @@ export default function TestPage() {
               ))}
             </div>
           </div>
-
-          {/* Summary */}
           <div className="p-4 mt-auto">
             <div className="bg-gray-50 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-gray-800">{answered}<span className="text-gray-400 text-lg">/{questions.length}</span></p>
