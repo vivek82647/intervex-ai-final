@@ -140,6 +140,7 @@ export type QuestionFilter = {
 export interface LiveStudent {
   student_id: string;
   student_name: string;
+  email?: string;        // ← student email
   status: string;
   warning_count: number;
   progress: number;
@@ -147,8 +148,8 @@ export interface LiveStudent {
   connected: boolean;
   joined_at?: string;
   last_activity?: string;
-  ip_address?: string;   // ← NEW
-  user_agent?: string;   // ← NEW
+  ip_address?: string;
+  user_agent?: string;
 }
 
 export interface AnswerDraft {
