@@ -187,37 +187,113 @@ export default function TestPage() {
       } catch {}
     };
 
-    let lastBlurTime = Date.now();
-    const onVis = () => { if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() }); };
-    const onPageHide = () => reportViolation('tab_switch', {});
-    const onBlur = () => { lastBlurTime = Date.now(); };
-    const onFocus = () => { if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime }); };
-    const onCopy = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'copy' }); };
-    const onPaste = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'paste' }); };
-    const onCtx = (e: Event) => { e.preventDefault(); reportViolation('right_click'); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key))) { e.preventDefault(); reportViolation('dev_tools'); } };
+    // ═══════════════════════════════════════════════════
+    // NUCLEAR LOCK — ALL keys disabled, tab switch blocked
+    // ═══════════════════════════════════════════════════
 
-    document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('pagehide', onPageHide);
-    window.addEventListener('blur', onBlur);
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('copy', onCopy);
-    document.addEventListener('paste', onPaste);
-    document.addEventListener('contextmenu', onCtx);
-    document.addEventListener('keydown', onKey);
+    // 1. BLOCK EVERY KEYBOARD EVENT except typing in inputs
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA';
+
+      // Always block these — no exceptions
+      const alwaysBlock = [
+        'Escape', 'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+      ];
+      if (alwaysBlock.includes(e.key)) {
+        e.preventDefault(); e.stopImmediatePropagation(); return false;
+      }
+      // Block Alt+anything
+      if (e.altKey) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        reportViolation('tab_switch', { method: 'alt_key' });
+        return false;
+      }
+      // Block Ctrl combos (except Ctrl+A/Z/X in inputs for UX)
+      if (e.ctrlKey || e.metaKey) {
+        const allowed = isTyping ? ['a','z','x','c','v'] : [];
+        if (!allowed.includes(e.key.toLowerCase())) {
+          e.preventDefault(); e.stopImmediatePropagation();
+          if (['w','t','r','n','l','p'].includes(e.key.toLowerCase())) {
+            reportViolation('tab_switch', { method: 'ctrl_' + e.key });
+          }
+          return false;
+        }
+      }
+      // Block backspace outside inputs (browser back)
+      if (e.key === 'Backspace' && !isTyping) {
+        e.preventDefault(); e.stopImmediatePropagation(); return false;
+      }
+    };
+
+    // 2. BLOCK TAB SWITCH — show overlay immediately
+    const onVis = () => {
+      if (document.hidden) {
+        reportViolation('tab_switch', { ts: new Date().toISOString() });
+      }
+    };
+
+    // 3. BLOCK RIGHT CLICK & COPY/PASTE
+    const onCtx = (e: Event) => { e.preventDefault(); e.stopImmediatePropagation(); reportViolation('right_click', {}); };
+    const onCopy = (e: Event) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    const onPaste = (e: Event) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    const onSelect = (e: Event) => { e.preventDefault(); };
+
+    // 4. BLOCK BACK BUTTON — push 50 states
+    for (let i = 0; i < 50; i++) window.history.pushState(null, '', window.location.href);
+    const onPopState = () => {
+      window.history.pushState(null, '', window.location.href);
+      reportViolation('tab_switch', { method: 'back_button' });
+    };
+
+    // 5. BLOCK PAGE UNLOAD
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault(); e.returnValue = ''; return '';
+    };
+
+    // 6. FULLSCREEN
     const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-    if (!isMobile) document.documentElement.requestFullscreen().catch(() => {});
+    const enterFs = () => {
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+    };
+    if (!isMobile) enterFs();
+    const onFsChange = () => {
+      const inFs = !!document.fullscreenElement || !!(document as any).webkitFullscreenElement;
+      if (!inFs && !submitted) {
+        reportViolation('fullscreen_exit', {});
+        setTimeout(enterFs, 300);
+      }
+    };
+
+    // ADD ALL LISTENERS — use capture:true so they fire FIRST
+    document.addEventListener('keydown', onKey, { capture: true });
+    document.addEventListener('keyup', (e) => {
+      if (['Escape','F11'].includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); }
+    }, { capture: true });
+    document.addEventListener('visibilitychange', onVis);
+    document.addEventListener('contextmenu', onCtx, { capture: true });
+    document.addEventListener('copy', onCopy, { capture: true });
+    document.addEventListener('paste', onPaste, { capture: true });
+    document.addEventListener('selectstart', onSelect);
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
 
     return () => {
       socket.disconnect();
+      document.removeEventListener('keydown', onKey, { capture: true } as any);
       document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('pagehide', onPageHide);
-      window.removeEventListener('blur', onBlur);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('copy', onCopy);
-      document.removeEventListener('paste', onPaste);
-      document.removeEventListener('contextmenu', onCtx);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('contextmenu', onCtx, { capture: true } as any);
+      document.removeEventListener('copy', onCopy, { capture: true } as any);
+      document.removeEventListener('paste', onPaste, { capture: true } as any);
+      document.removeEventListener('selectstart', onSelect);
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
     };
   }, [attemptId, studentId]);
 
