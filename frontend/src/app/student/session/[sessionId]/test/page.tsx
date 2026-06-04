@@ -77,6 +77,7 @@ export default function TestPage() {
   const [sessionTitle, setSessionTitle] = useState('');
   const [reconnected, setReconnected] = useState(false); // ← NAYA
   const socketRef = useRef<Socket | null>(null);
+  const attemptIdRef = useRef<string | null>(storedAttemptId || null);
   const timerRef = useRef<NodeJS.Timeout>();
   const hasLoaded = useRef(false);
 
@@ -107,6 +108,7 @@ export default function TestPage() {
         setQuestions(qRes.data);
         setSessionTitle(data.session_title || 'Assessment');
         setAttemptId(data.attempt_id);
+        attemptIdRef.current = data.attempt_id;
         setSession({ attemptId: data.attempt_id });
         if (data.max_warnings) setMaxWarnings(data.max_warnings);
 
@@ -173,7 +175,22 @@ export default function TestPage() {
       });
     });
     socket.on('warning_issued', ({ count, message }: any) => { setWarningCount(count); toast.error(message, { duration: 4000 }); });
-    socket.on('session_terminated', ({ reason }: any) => { toast.error(`Terminated: ${reason}`, { duration: 0 }); router.push(`/student/result?terminated=true`); });
+    socket.on('session_terminated', async ({ reason }: any) => {
+      toast.error(`Session Terminated: ${reason}`, { duration: 0 });
+      // Save termination to DB
+      try {
+        const currentAttemptId = attemptIdRef.current;
+        if (currentAttemptId) {
+          const tok = studentToken || Cookies.get('access_token');
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/${currentAttemptId}/terminate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` },
+            body: JSON.stringify({ reason }),
+          });
+        }
+      } catch {}
+      setTimeout(() => router.replace('/student/terminated'), 1500);
+    });
     socketRef.current = socket;
 
     const reportViolation = async (type: string, details: any = {}) => {

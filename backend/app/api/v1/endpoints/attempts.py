@@ -452,3 +452,29 @@ async def get_attempt_result(
         "answers": answers_data,
         "warnings": warnings
     }
+
+@router.post("/{attempt_id}/terminate")
+async def terminate_attempt(
+    attempt_id: str,
+    data: dict,
+    current_user: dict = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Called by frontend when session_terminated socket event received"""
+    result = await db.execute(
+        select(Attempt).where(
+            Attempt.id == attempt_id,
+            Attempt.student_id == current_user["user_id"]
+        )
+    )
+    attempt = result.scalar_one_or_none()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if attempt.status in ("submitted", "terminated"):
+        return {"status": attempt.status}  # Already done
+
+    attempt.status = "terminated"
+    attempt.termination_reason = data.get("reason", "Policy violation")
+    attempt.submitted_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "terminated"}

@@ -103,27 +103,55 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
     if session.status != "active":
         raise HTTPException(status_code=400, detail=f"Session is '{session.status}' — cannot join right now")
 
-    # Get real IP — frontend se aaye ya backend se detect karo
+    # Get real IP
     ip_address = data.ip_address or request.client.host or "Unknown"
 
-    # ── IP BLOCK CHECK ──────────────────────────────────────────────────────────
-    # Check if this IP has a terminated attempt in this session
-    ip_terminated = await db.execute(
-        select(Attempt).join(Student, Attempt.student_id == Student.id).where(
-            Attempt.session_id == session.id,
-            Attempt.status == "terminated",
-            Attempt.ip_address == ip_address,
-            Attempt.termination_reason != "REJOIN_APPROVED",
-        )
-    )
-    ip_attempt = ip_terminated.scalar_one_or_none()
-    if ip_attempt:
-        raise HTTPException(status_code=403, detail="IP_BLOCKED")
-    # ────────────────────────────────────────────────────────────────────────────
-
-    # Student dhundho ya banao
+    # ── STEP 1: EMAIL CHECK — find student first ───────────────────────────────
     result = await db.execute(select(Student).where(Student.email == data.email))
     student = result.scalar_one_or_none()
+
+    if student:
+        # Check if this student is terminated in this session
+        existing = await db.execute(
+            select(Attempt).where(
+                Attempt.session_id == session.id,
+                Attempt.student_id == student.id
+            )
+        )
+        attempt = existing.scalar_one_or_none()
+
+        if attempt:
+            if attempt.status == "submitted":
+                raise HTTPException(status_code=400, detail="You have already submitted this test")
+            if attempt.status == "terminated":
+                if attempt.termination_reason != "REJOIN_APPROVED":
+                    raise HTTPException(status_code=403, detail="TERMINATED")
+                # Rejoin approved — reset
+                attempt.status = "in_progress"
+                attempt.termination_reason = None
+                attempt.warning_count = 0
+                attempt.warning_count = 0
+                attempt.started_at = datetime.utcnow()
+                # Update IP to new one
+                attempt.ip_address = ip_address
+                await db.commit()
+
+    # ── STEP 2: IP BLOCK CHECK ─────────────────────────────────────────────────
+    # Block if any terminated attempt from this IP exists in this session
+    if ip_address and ip_address != "Unknown":
+        ip_check = await db.execute(
+            select(Attempt).where(
+                Attempt.session_id == session.id,
+                Attempt.status == "terminated",
+                Attempt.ip_address == ip_address,
+                Attempt.termination_reason != "REJOIN_APPROVED",
+            )
+        )
+        if ip_check.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="IP_BLOCKED")
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # Create student if not exists
     if not student:
         student = Student(
             id=str(uuid_lib.uuid4()),
@@ -138,25 +166,6 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
         db.add(student)
         await db.commit()
         await db.refresh(student)
-
-    # Existing attempt check
-    existing = await db.execute(
-        select(Attempt).where(Attempt.session_id == session.id, Attempt.student_id == student.id)
-    )
-    attempt = existing.scalar_one_or_none()
-
-    if attempt:
-        if attempt.status == "submitted":
-            raise HTTPException(status_code=400, detail="You have already submitted this test")
-        if attempt.status == "terminated":
-            if attempt.termination_reason != "REJOIN_APPROVED":
-                raise HTTPException(status_code=403, detail="TERMINATED")
-            # Rejoin approved — reset
-            attempt.status = "in_progress"
-            attempt.termination_reason = None
-            attempt.warning_count = 0
-            attempt.started_at = datetime.utcnow()
-            await db.commit()
 
     # Store IP in attempt when created
     token_data = {
