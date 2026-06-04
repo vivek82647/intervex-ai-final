@@ -1,8 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { XCircle, Mail, Send, Clock, CheckCircle } from 'lucide-react';
-import { Suspense } from 'react';
+import { XCircle, Mail, Send, CheckCircle } from 'lucide-react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
@@ -13,11 +12,11 @@ function BlockedContent() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
-  const [status, setStatus] = useState<'idle'|'sending'|'sent'>('idle');
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Block back button
     window.history.pushState(null, '', window.location.href);
     const block = () => window.history.pushState(null, '', window.location.href);
     window.addEventListener('popstate', block);
@@ -27,19 +26,18 @@ function BlockedContent() {
   const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email) { setError('Name and email required'); return; }
-    setStatus('sending');
+    setSending(true);
     try {
-      // Send rejoin request via API
-      const res = await fetch(`${API}/auth/student/rejoin-request`, {
+      await fetch(`${API}/auth/student/rejoin-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, message, reason }),
       });
-      if (res.ok) setStatus('sent');
-      else throw new Error('Failed');
+      setSent(true);
     } catch {
-      // Even if API fails, show sent (admin will check manually)
-      setStatus('sent');
+      setSent(true);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -48,7 +46,6 @@ function BlockedContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-red-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Header */}
         <div className="text-center mb-6">
           <div className="w-20 h-20 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center mx-auto mb-4">
             <XCircle className="w-10 h-10 text-red-400" />
@@ -61,7 +58,6 @@ function BlockedContent() {
           </p>
         </div>
 
-        {/* Info box */}
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-5 text-sm text-white/50 leading-relaxed">
           {isIP
             ? 'A previous attempt from this IP address was terminated. You cannot rejoin this session from this network.'
@@ -70,8 +66,7 @@ function BlockedContent() {
           To get access, please contact your administrator and request a new session.
         </div>
 
-        {/* Contact Admin Form */}
-        {status === 'idle' && (
+        {!sent ? (
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
             <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
               <Mail className="w-4 h-4 text-indigo-400" /> Request Admin Access
@@ -83,36 +78,25 @@ function BlockedContent() {
               <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Your Email" required
                 className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400" />
               <textarea value={message} onChange={e => setMessage(e.target.value)}
-                placeholder="Explain why you need access (optional)..."
-                rows={3}
+                placeholder="Explain why you need access (optional)..." rows={3}
                 className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-indigo-400 resize-none" />
               {error && <p className="text-red-400 text-xs">{error}</p>}
-              <button type="submit" disabled={status === 'sending'}
+              <button type="submit" disabled={sending}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                <Send className="w-4 h-4" /> Send Request to Admin
+                <Send className="w-4 h-4" />
+                {sending ? 'Sending...' : 'Send Request to Admin'}
               </button>
             </form>
           </div>
-        )}
-
-        {status === 'sending' && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
-            <div className="w-8 h-8 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-white/50 text-sm">Sending request...</p>
-          </div>
-        )}
-
-        {status === 'sent' && (
+        ) : (
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-8 text-center">
             <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
             <p className="text-emerald-300 font-semibold mb-1">Request Sent!</p>
-            <p className="text-white/40 text-sm">Your administrator will review your request and contact you if a new session is provided.</p>
+            <p className="text-white/40 text-sm">Your administrator will review and contact you if a new session is provided.</p>
           </div>
         )}
 
-        <p className="text-white/20 text-xs text-center mt-6">
-          This page cannot be navigated away from.
-        </p>
+        <p className="text-white/20 text-xs text-center mt-6">This page cannot be navigated away from.</p>
       </div>
     </div>
   );
