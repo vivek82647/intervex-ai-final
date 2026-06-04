@@ -68,9 +68,6 @@ export default function TestPage() {
   const [attemptId, setAttemptId] = useState<string | null>(storedAttemptId);
   const [timeLeft, setTimeLeft] = useState(0);
   const [warningCount, setWarningCount] = useState(0);
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(true);
-  const [fsWarningShown, setFsWarningShown] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [language, setLanguage] = useState('python');
@@ -190,105 +187,37 @@ export default function TestPage() {
       } catch {}
     };
 
-    // ── FULLSCREEN LOCK ────────────────────────────────────────────────────────
-    const enterFullscreen = () => {
-      const el = document.documentElement;
-      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-      else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
-      else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen();
-    };
-    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-    if (!isMobile) enterFullscreen();
-
-    // Fullscreen change — show blocking overlay
-    const onFullscreenChange = () => {
-      const inFs = !!document.fullscreenElement || !!(document as any).webkitFullscreenElement;
-      setIsFullscreen(inFs);
-      if (!inFs && !submitted) {
-        reportViolation('fullscreen_exit', {});
-        setFsWarningShown(true);
-      }
-    };
-
-    // ── BLOCK ALL EXIT KEYS ────────────────────────────────────────────────────
-    const onKey = (e: KeyboardEvent) => {
-      // Block ESC
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return false; }
-      // Block F11
-      if (e.key === 'F11') { e.preventDefault(); return false; }
-      // Block Alt+F4
-      if (e.altKey && e.key === 'F4') { e.preventDefault(); return false; }
-      // Block Alt+Tab (cant fully block but record)
-      if (e.altKey && e.key === 'Tab') { e.preventDefault(); reportViolation('tab_switch', { method: 'alt_tab' }); return false; }
-      // Block browser back (Backspace on non-input)
-      if (e.key === 'Backspace' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-      }
-      // Block devtools
-      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key))) {
-        e.preventDefault(); reportViolation('dev_tools', {});
-      }
-      // Block Ctrl+W (close tab)
-      if (e.ctrlKey && e.key === 'w') { e.preventDefault(); return false; }
-      // Block Ctrl+T (new tab)
-      if (e.ctrlKey && e.key === 't') { e.preventDefault(); return false; }
-      // Block Ctrl+R (reload)
-      if (e.ctrlKey && e.key === 'r') { e.preventDefault(); return false; }
-    };
-
-    // ── BLOCK BACK NAVIGATION (mobile + desktop) ──────────────────────────────
-    // Push multiple states to make back button harder
-    for (let i = 0; i < 10; i++) window.history.pushState(null, '', window.location.href);
-    const onPopState = (e: PopStateEvent) => {
-      e.preventDefault();
-      // Keep pushing state to prevent going back
-      window.history.pushState(null, '', window.location.href);
-      reportViolation('tab_switch', { method: 'back_button' });
-    };
-
-    // ── TAB SWITCH / VISIBILITY ────────────────────────────────────────────────
     let lastBlurTime = Date.now();
     const onVis = () => { if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() }); };
+    const onPageHide = () => reportViolation('tab_switch', {});
     const onBlur = () => { lastBlurTime = Date.now(); };
-    const onFocus = () => { if (Date.now() - lastBlurTime > 2000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime }); };
-
-    // ── BLOCK COPY/PASTE/RIGHT-CLICK ───────────────────────────────────────────
+    const onFocus = () => { if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime }); };
     const onCopy = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'copy' }); };
     const onPaste = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'paste' }); };
-    const onCtx = (e: Event) => { e.preventDefault(); reportViolation('right_click', {}); };
+    const onCtx = (e: Event) => { e.preventDefault(); reportViolation('right_click'); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key))) { e.preventDefault(); reportViolation('dev_tools'); } };
 
-    // ── BLOCK PAGE UNLOAD ──────────────────────────────────────────────────────
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = 'Test is in progress. Are you sure you want to leave?';
-      return e.returnValue;
-    };
-
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
-    document.addEventListener('keydown', onKey, true); // capture phase - blocks before anything else
-    window.addEventListener('popstate', onPopState);
     document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', onPageHide);
     window.addEventListener('blur', onBlur);
     window.addEventListener('focus', onFocus);
     document.addEventListener('copy', onCopy);
     document.addEventListener('paste', onPaste);
     document.addEventListener('contextmenu', onCtx);
-    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('keydown', onKey);
+    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    if (!isMobile) document.documentElement.requestFullscreen().catch(() => {});
 
     return () => {
       socket.disconnect();
-      document.removeEventListener('fullscreenchange', onFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
-      document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('popstate', onPopState);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('paste', onPaste);
       document.removeEventListener('contextmenu', onCtx);
-      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('keydown', onKey);
     };
   }, [attemptId, studentId]);
 
@@ -311,7 +240,7 @@ export default function TestPage() {
     } catch { toast.error('Submission failed'); setSubmitting(false); }
   };
 
-  const handleSubmit = () => { setShowSubmitModal(true); };
+  const handleSubmit = () => { if (!confirm('Submit your test? You cannot change answers after this.')) return; submitAttempt(); };
   const handleAutoSubmit = () => { if (submitted) return; toast('⏰ Time is up! Submitting...'); submitAttempt(); };
 
   const runCode = async () => {
@@ -595,64 +524,6 @@ export default function TestPage() {
           </div>
         </aside>
       </div>
-      {/* ── Fullscreen Exit Overlay ── */}
-      {!isFullscreen && !submitted && (
-        <div className="fixed inset-0 bg-black z-[9999] flex flex-col items-center justify-center px-6 text-center"
-          style={{ backdropFilter: 'blur(20px)' }}>
-          <div className="text-6xl mb-6">⚠️</div>
-          <h2 className="text-white text-2xl font-black mb-3">Test Paused</h2>
-          <p className="text-white/70 text-base mb-2">You exited fullscreen mode.</p>
-          <p className="text-white/50 text-sm mb-8">The test is locked until you return to fullscreen.</p>
-          {fsWarningShown && (
-            <p className="text-orange-400 text-sm mb-6">⚡ A violation has been recorded.</p>
-          )}
-          <button
-            onClick={() => {
-              const el = document.documentElement;
-              if (el.requestFullscreen) el.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
-              else if ((el as any).webkitRequestFullscreen) { (el as any).webkitRequestFullscreen(); setIsFullscreen(true); }
-            }}
-            className="bg-white text-black font-bold px-8 py-4 rounded-2xl text-lg hover:bg-gray-100 transition-all"
-          >
-            🔒 Return to Test
-          </button>
-          <p className="text-white/20 text-xs mt-6">Do not close this tab. Your test is still active.</p>
-        </div>
-      )}
-
-      {/* ── Submit Confirmation Modal ── */}
-      {showSubmitModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Send className="w-7 h-7 text-blue-600" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Submit Test?</h2>
-            <p className="text-gray-500 text-sm mb-2">
-              You have answered <span className="font-semibold text-gray-800">{answered}</span> out of <span className="font-semibold text-gray-800">{questions.length}</span> questions.
-            </p>
-            {notVisited > 0 && (
-              <p className="text-orange-500 text-sm mb-4">⚠️ {notVisited} question{notVisited > 1 ? 's' : ''} not visited.</p>
-            )}
-            <p className="text-gray-400 text-xs mb-6">You cannot change answers after submitting.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowSubmitModal(false)}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-all"
-              >
-                Continue Test
-              </button>
-              <button
-                onClick={() => { setShowSubmitModal(false); submitAttempt(); }}
-                disabled={submitting}
-                className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-60 transition-all"
-              >
-                {submitting ? 'Submitting...' : 'Submit Now'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
