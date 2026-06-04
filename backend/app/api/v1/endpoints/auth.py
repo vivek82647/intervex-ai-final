@@ -34,6 +34,7 @@ class StudentJoinRequest(BaseModel):
     email: EmailStr
     roll_number: Optional[str] = None
     phone: Optional[str] = None
+    ip_address: Optional[str] = None  # sent from frontend
 
 
 # ─── Admin Login ──────────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 # ─── Student Join — seedha naam+email se, koi OTP nahi ──────────────────────
 
 @router.post("/student/join")
-async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_db)):
+async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSession = Depends(get_db)):
     # Session validate karo
     result = await db.execute(select(DBSession).where(DBSession.join_link == data.join_link))
     session = result.scalar_one_or_none()
@@ -101,6 +102,24 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=404, detail="Invalid session link")
     if session.status != "active":
         raise HTTPException(status_code=400, detail=f"Session is '{session.status}' — cannot join right now")
+
+    # Get real IP — frontend se aaye ya backend se detect karo
+    ip_address = data.ip_address or request.client.host or "Unknown"
+
+    # ── IP BLOCK CHECK ──────────────────────────────────────────────────────────
+    # Check if this IP has a terminated attempt in this session
+    ip_terminated = await db.execute(
+        select(Attempt).join(Student, Attempt.student_id == Student.id).where(
+            Attempt.session_id == session.id,
+            Attempt.status == "terminated",
+            Attempt.ip_address == ip_address,
+            Attempt.termination_reason != "REJOIN_APPROVED",
+        )
+    )
+    ip_attempt = ip_terminated.scalar_one_or_none()
+    if ip_attempt:
+        raise HTTPException(status_code=403, detail="IP_BLOCKED")
+    # ────────────────────────────────────────────────────────────────────────────
 
     # Student dhundho ya banao
     result = await db.execute(select(Student).where(Student.email == data.email))
@@ -132,12 +151,14 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
         if attempt.status == "terminated":
             if attempt.termination_reason != "REJOIN_APPROVED":
                 raise HTTPException(status_code=403, detail="TERMINATED")
+            # Rejoin approved — reset
             attempt.status = "in_progress"
             attempt.termination_reason = None
             attempt.warning_count = 0
             attempt.started_at = datetime.utcnow()
             await db.commit()
 
+    # Store IP in attempt when created
     token_data = {
         "sub": str(student.id), "email": student.email,
         "role": "student", "session_id": session.id,
@@ -153,6 +174,42 @@ async def student_join(data: StudentJoinRequest, db: AsyncSession = Depends(get_
         "duration_minutes": session.duration_minutes,
     }
 
+
+
+
+# ─── Student Rejoin Request (blocked/terminated student contacts admin) ────────
+
+class RejoinRequestData(BaseModel):
+    name: str
+    email: EmailStr
+    message: Optional[str] = None
+    reason: str = "terminated"
+
+
+@router.post("/student/rejoin-request")
+async def student_rejoin_request(data: RejoinRequestData, db: AsyncSession = Depends(get_db)):
+    """Store rejoin request so admin can see it in dashboard"""
+    from app.models.models import OTPRecord
+    from datetime import timedelta
+    # Reuse OTPRecord table to store request (purpose="rejoin_request")
+    # Clean old requests for this email first
+    await db.execute(
+        sql_delete(OTPRecord).where(
+            OTPRecord.email == data.email,
+            OTPRecord.purpose == "rejoin_request"
+        )
+    )
+    import json
+    record = OTPRecord(
+        email=data.email,
+        otp=json.dumps({"name": data.name, "message": data.message or "", "reason": data.reason}),
+        purpose="rejoin_request",
+        expires_at=datetime.utcnow() + timedelta(days=30),
+        is_used=False,
+    )
+    db.add(record)
+    await db.commit()
+    return {"message": "Request submitted successfully"}
 
 # ─── Refresh & Me ─────────────────────────────────────────────────────────────
 
