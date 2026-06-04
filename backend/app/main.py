@@ -17,40 +17,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def run_migrations():
-    """Add missing columns to existing tables without dropping data"""
-    import aiosqlite
-    db_path = "./intervex.db"
-    try:
-        async with aiosqlite.connect(db_path) as db:
-            # Check and add password_hash to students
-            cursor = await db.execute("PRAGMA table_info(students)")
-            columns = [row[1] for row in await cursor.fetchall()]
-
-            if "password_hash" not in columns:
-                await db.execute("ALTER TABLE students ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
-                logger.info("✅ Added password_hash to students")
-
-            if "is_verified" not in columns:
-                await db.execute("ALTER TABLE students ADD COLUMN is_verified INTEGER NOT NULL DEFAULT 0")
-                logger.info("✅ Added is_verified to students")
-
-            if "admin_id" not in columns:
-                await db.execute("ALTER TABLE students ADD COLUMN admin_id TEXT")
-                logger.info("✅ Added admin_id to students")
-
-            await db.commit()
-            logger.info("✅ Migrations complete")
-    except Exception as e:
-        logger.warning(f"Migration note: {e}")
-
-
 async def seed_super_admin():
+    """Create the super admin account if it doesn't exist yet"""
     from sqlalchemy import select
     from app.models.models import Admin
     from app.core.security import hash_password
+
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Admin).where(Admin.email == settings.SUPER_ADMIN_EMAIL))
+        result = await db.execute(
+            select(Admin).where(Admin.email == settings.SUPER_ADMIN_EMAIL)
+        )
         if not result.scalar_one_or_none():
             admin = Admin(
                 id=str(uuid.uuid4()),
@@ -72,10 +48,10 @@ async def seed_super_admin():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 INTERVEX AI starting...")
+    # Create all tables in PostgreSQL (safe — skips existing tables)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ Database tables created")
-    await run_migrations()
+    logger.info("✅ PostgreSQL tables ready")
     await seed_super_admin()
     yield
     logger.info("🛑 INTERVEX AI shutting down...")
@@ -90,9 +66,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ---------------------------------------------------------------
+# CORS — list every origin that should be allowed.
+# allow_origins=["*"] conflicts with allow_credentials=True in
+# most browsers, so we list origins explicitly instead.
+# ---------------------------------------------------------------
+ALLOWED_ORIGINS = [
+    "https://intervex-ai-final.vercel.app",   # production frontend
+    "http://localhost:3000",                    # local React dev
+    "http://localhost:5173",                    # local Vite dev
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,9 +97,11 @@ async def health_check():
         "status": "healthy",
         "service": "INTERVEX AI",
         "version": "2.0.0",
-        "db": "SQLite (intervex.db)",
-        "ai": "Groq (free)",
+        "db": "PostgreSQL",
+        "ai": "Groq (llama-3.3-70b)",
     }
 
 
+# Entry point for Render / uvicorn:
+#   uvicorn app.main:asgi_app --host 0.0.0.0 --port 8000
 asgi_app = socket_app

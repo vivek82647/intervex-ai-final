@@ -7,11 +7,11 @@ import io
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, delete as sql_delete
 
 from app.core.database import get_db
 from app.core.security import require_admin
-from app.models.models import Question
+from app.models.models import Question, SessionQuestion
 from app.schemas.schemas import QuestionCreate, QuestionOut, AIGenerateRequest
 from app.services.ai_service import ai_service
 
@@ -28,7 +28,7 @@ async def create_question(
     options = None
     if data.options:
         options = [o.model_dump() for o in data.options]
-    
+
     test_cases = None
     if data.test_cases:
         test_cases = [tc.model_dump() for tc in data.test_cases]
@@ -72,7 +72,7 @@ async def list_questions(
 ):
     """List questions for admin's question bank"""
     query = select(Question).where(Question.admin_id == current_user["user_id"])
-    
+
     if topic:
         query = query.where(Question.topic.ilike(f"%{topic}%"))
     if type:
@@ -86,7 +86,7 @@ async def list_questions(
                 Question.content.ilike(f"%{search}%")
             )
         )
-    
+
     query = query.offset(skip).limit(limit).order_by(Question.created_at.desc())
     result = await db.execute(query)
     return result.scalars().all()
@@ -99,8 +99,10 @@ async def question_stats(
 ):
     """Get question bank statistics"""
     admin_id = current_user["user_id"]
-    
-    total = await db.execute(select(func.count(Question.id)).where(Question.admin_id == admin_id))
+
+    total = await db.execute(
+        select(func.count(Question.id)).where(Question.admin_id == admin_id)
+    )
     by_type = await db.execute(
         select(Question.type, func.count(Question.id))
         .where(Question.admin_id == admin_id)
@@ -118,7 +120,7 @@ async def question_stats(
         .order_by(func.count(Question.id).desc())
         .limit(10)
     )
-    
+
     return {
         "total": total.scalar(),
         "by_type": dict(by_type.all()),
@@ -145,7 +147,7 @@ async def ai_generate_questions(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
-    
+
     saved_questions = []
     for q_data in generated:
         question = Question(
@@ -168,7 +170,7 @@ async def ai_generate_questions(
         )
         db.add(question)
         saved_questions.append(question)
-    
+
     await db.commit()
     return {
         "generated_count": len(saved_questions),
@@ -185,37 +187,32 @@ async def upload_questions_csv(
     """Bulk upload questions from CSV"""
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
-    
+
     content = await file.read()
     reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
-    
+
     required_fields = {"type", "difficulty", "topic", "title", "content", "marks"}
-    
+
     saved = []
     errors = []
-    
+    total_rows = 0
+
     for i, row in enumerate(reader, 1):
-        # Only check fields that exist in header
+        total_rows = i
         missing = required_fields - set(row.keys())
         if missing:
             errors.append(f"Row {i}: Missing fields: {missing}")
             continue
-        
-        # Skip empty rows
+
         if not row.get("type") or not row.get("content"):
             errors.append(f"Row {i}: Empty type or content")
             continue
 
         try:
-            # Parse MCQ options
-            # Supports both formats:
-            # Semicolon: "A|text|0;B|text|1" (recommended)
-            # Comma:     "A|text|0,B|text|1"
             options = None
             if row.get("type") == "mcq" and row.get("options"):
                 options = []
                 raw = row["options"].strip()
-                # Use semicolon if present, else comma
                 sep = ";" if ";" in raw else ","
                 for opt_str in raw.split(sep):
                     parts = opt_str.strip().split("|")
@@ -225,7 +222,7 @@ async def upload_questions_csv(
                             "text": parts[1].strip(),
                             "is_correct": parts[2].strip() == "1" if len(parts) > 2 else False
                         })
-            
+
             question = Question(
                 id=str(uuid.uuid4()),
                 admin_id=current_user["user_id"],
@@ -246,14 +243,14 @@ async def upload_questions_csv(
             saved.append(i)
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
-    
+
     if saved:
         await db.commit()
-    
+
     return {
         "saved": len(saved),
         "errors": errors,
-        "total_rows": i if 'i' in dir() else 0
+        "total_rows": total_rows
     }
 
 
@@ -263,7 +260,8 @@ async def delete_question(
     current_user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a question"""
+    """Delete a question — removes session_questions references first to avoid FK violation"""
+    # Verify the question exists and belongs to this admin
     result = await db.execute(
         select(Question).where(
             Question.id == question_id,
@@ -273,7 +271,13 @@ async def delete_question(
     question = result.scalar_one_or_none()
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    
+
+    # Delete FK-referencing rows in session_questions first
+    await db.execute(
+        sql_delete(SessionQuestion).where(SessionQuestion.question_id == question_id)
+    )
+
+    # Now safe to delete the question
     await db.delete(question)
     await db.commit()
     return {"success": True}
@@ -291,17 +295,21 @@ async def extract_questions_from_file(
 ):
     """Extract questions from PDF, image, or DOCX using AI"""
     from app.services.file_extractor import extract_text_from_file
+    import json
+    import re
 
     allowed = {'.pdf', '.png', '.jpg', '.jpeg', '.docx', '.txt', '.webp'}
     ext = '.' + file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
     if ext not in allowed:
-        raise HTTPException(status_code=400, detail=f"Unsupported file. Use: PDF, PNG, JPG, DOCX, TXT")
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file. Use: PDF, PNG, JPG, DOCX, TXT"
+        )
 
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:  # 10MB limit
+    if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
 
-    # Extract text
     try:
         text = await extract_text_from_file(content, file.filename)
     except ValueError as e:
@@ -310,10 +318,8 @@ async def extract_questions_from_file(
     if len(text) < 50:
         raise HTTPException(status_code=400, detail="Too little text extracted from file.")
 
-    # Trim text to avoid token limits
     text = text[:6000]
 
-    # Generate questions using Groq
     system = "You are an expert educator. Generate assessment questions as valid JSON array only. No extra text."
 
     if q_type == "mcq":
@@ -334,7 +340,7 @@ CONTENT:
 Return ONLY a JSON array:
 [{{"title":"Short title","content":"Full question","correct_answer":"Model answer","marks":{marks},"topic":"Extracted","difficulty":"{difficulty}"}}]"""
 
-    else:  # coding
+    else:
         prompt = f"""Based on this content, generate {count} coding problems at {difficulty} difficulty.
 
 CONTENT:
@@ -344,7 +350,6 @@ Return ONLY a JSON array:
 [{{"title":"Problem title","content":"Problem statement","starter_code":{{"python":"# code here"}},"marks":{marks},"topic":"Extracted","difficulty":"{difficulty}"}}]"""
 
     try:
-        import json, re
         result = (await ai_service.generate(prompt, system)).strip()
         if result.startswith("```"):
             result = re.sub(r"```(?:json)?", "", result).strip().rstrip("`")
@@ -356,7 +361,6 @@ Return ONLY a JSON array:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
-    # Save to DB
     saved = []
     for q_data in generated:
         question = Question(

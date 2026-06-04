@@ -1,5 +1,5 @@
 """
-Async Database - PostgreSQL (Neon) in production, SQLite locally
+Async Database - PostgreSQL (Neon / Render) 
 """
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -7,32 +7,24 @@ from app.core.config import settings
 
 db_url = settings.DATABASE_URL
 
-# Fix URL scheme for asyncpg
+# Normalize URL scheme so asyncpg is always used
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
 elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Remove sslmode from URL — asyncpg handles SSL via connect_args
-if "?sslmode=require" in db_url:
-    db_url = db_url.replace("?sslmode=require", "")
-elif "&sslmode=require" in db_url:
-    db_url = db_url.replace("&sslmode=require", "")
+# Strip sslmode query param — asyncpg uses connect_args for SSL, not the URL
+for param in ("?sslmode=require", "&sslmode=require", "?sslmode=disable", "&sslmode=disable"):
+    db_url = db_url.replace(param, "")
 
-is_sqlite = "sqlite" in db_url
-
-if is_sqlite:
-    engine = create_async_engine(
-        db_url,
-        echo=settings.DEBUG,
-        connect_args={"check_same_thread": False},
-    )
-else:
-    engine = create_async_engine(
-        db_url,
-        echo=settings.DEBUG,
-        connect_args={"ssl": "require"},  # asyncpg SSL syntax
-    )
+engine = create_async_engine(
+    db_url,
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,          # auto-recover dropped connections
+    connect_args={"ssl": "require"},  # asyncpg SSL syntax
+)
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
