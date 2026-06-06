@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy import select, delete as sql_delete
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
