@@ -204,11 +204,28 @@ export default function TestPage() {
       } catch {}
     };
 
+    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+
+    // Mobile pe fullscreen nahi — iOS support nahi karta
+    if (!isMobile) document.documentElement.requestFullscreen().catch(() => {});
+
     let lastBlurTime = Date.now();
-    const onVis = () => { if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() }); };
-    const onPageHide = () => reportViolation('tab_switch', {});
+
+    // Mobile pe visibilitychange aur blur ignore karo
+    // (notification, home button, screen lock sab trigger karte hain — false positives)
+    const onVis = () => {
+      if (isMobile) return; // Mobile pe skip
+      if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() });
+    };
+    const onPageHide = () => {
+      if (isMobile) return; // Mobile pe skip
+      reportViolation('tab_switch', {});
+    };
     const onBlur = () => { lastBlurTime = Date.now(); };
-    const onFocus = () => { if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime }); };
+    const onFocus = () => {
+      if (isMobile) return; // Mobile pe skip
+      if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime });
+    };
     const onCopy = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'copy' }); };
     const onPaste = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'paste' }); };
     const onCtx = (e: Event) => { e.preventDefault(); reportViolation('right_click'); };
@@ -222,8 +239,6 @@ export default function TestPage() {
     document.addEventListener('paste', onPaste);
     document.addEventListener('contextmenu', onCtx);
     document.addEventListener('keydown', onKey);
-    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-    if (!isMobile) document.documentElement.requestFullscreen().catch(() => {});
 
     return () => {
       socket.disconnect();

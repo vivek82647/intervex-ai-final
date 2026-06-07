@@ -1,9 +1,9 @@
 """
-Admin Endpoints - Dashboard stats, profile
+Admin Endpoints - Dashboard stats, profile, DB reset
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
 from app.core.database import get_db
 from app.core.security import require_admin
@@ -35,7 +35,6 @@ async def get_dashboard(
         .join(DBSession, Attempt.session_id == DBSession.id)
         .where(DBSession.admin_id == admin_id)
     )
-    # Count unique students who attempted this admin's sessions
     total_students = await db.execute(
         select(func.count(func.distinct(Attempt.student_id)))
         .join(DBSession, Attempt.session_id == DBSession.id)
@@ -75,3 +74,16 @@ async def get_profile(
         "role": admin.role,
         "created_at": admin.created_at,
     }
+
+
+# ─── TEMPORARY: DB Reset — use karne ke baad DELETE kar dena ─────────────────
+@router.delete("/reset-db")
+async def reset_database(db: AsyncSession = Depends(get_db)):
+    """Saari tables saaf karo — TEMPORARY ENDPOINT"""
+    await db.execute(text("DELETE FROM warnings"))
+    await db.execute(text("DELETE FROM answers"))
+    await db.execute(text("DELETE FROM attempts"))
+    await db.execute(text("DELETE FROM students"))
+    await db.execute(text("DELETE FROM otp_records"))
+    await db.commit()
+    return {"message": "DB reset done! Students aur attempts sab saaf ho gaye."}
