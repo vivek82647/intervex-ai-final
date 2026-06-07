@@ -336,9 +336,9 @@ export default function TestPage() {
           const currentAttemptId = attemptIdRef.current;
           if (currentAttemptId) {
             try {
-              const res = await fetch(\`\${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/\${currentAttemptId}/warning\`, {
+              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/${currentAttemptId}/warning`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${tok}\` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` },
                 body: JSON.stringify({ type: 'camera_disabled', details: { message: 'Camera was turned off' } }),
               });
               const data = await res.json();
