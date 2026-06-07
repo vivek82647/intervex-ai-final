@@ -199,8 +199,30 @@ export default function TestPage() {
         const res = await attemptApi.recordWarning(attemptId, { type, details });
         const newCount = res.data.warning_count;
         setWarningCount(newCount);
-        socket.emit('anti_cheat_warning', { type, details, session_id: sessionId, student_id: studentId, max_warnings: maxWarnings });
-        if (newCount >= maxWarnings) { toast.error('Too many violations! Test terminated.', { duration: 0 }); setTimeout(() => router.push('/student/terminated'), 2000); }
+
+        // DB ka actual count socket ko bhejo — sync rahe monitor pe
+        socket.emit('anti_cheat_warning', {
+          type, details,
+          session_id: sessionId,
+          student_id: studentId,
+          max_warnings: maxWarnings,
+          db_warning_count: newCount, // actual DB count
+        });
+
+        // DB count se terminate karo — socket count pe depend mat karo
+        if (newCount >= maxWarnings) {
+          toast.error('Too many violations! Test terminated.', { duration: 0 });
+          // DB mein bhi terminate karo
+          const tok = studentToken || Cookies.get('access_token');
+          try {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/${attemptId}/terminate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` },
+              body: JSON.stringify({ reason: `Terminated: ${type} - max warnings exceeded` }),
+            });
+          } catch {}
+          setTimeout(() => router.push('/student/terminated'), 1500);
+        }
       } catch {}
     };
 
@@ -211,24 +233,24 @@ export default function TestPage() {
 
     let lastBlurTime = Date.now();
 
-    // Mobile pe visibilitychange aur blur ignore karo
-    // (notification, home button, screen lock sab trigger karte hain — false positives)
+    // Mobile pe visibilitychange/blur/focus ignore karo — false positives bahut hote hain
+    // (notification, home button, screen lock sab trigger karte hain)
     const onVis = () => {
-      if (isMobile) return; // Mobile pe skip
+      if (isMobile) return;
       if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() });
     };
     const onPageHide = () => {
-      if (isMobile) return; // Mobile pe skip
+      if (isMobile) return;
       reportViolation('tab_switch', {});
     };
     const onBlur = () => { lastBlurTime = Date.now(); };
     const onFocus = () => {
-      if (isMobile) return; // Mobile pe skip
+      if (isMobile) return;
       if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime });
     };
     const onCopy = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'copy' }); };
     const onPaste = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'paste' }); };
-    const onCtx = (e: Event) => { e.preventDefault(); reportViolation('right_click'); };
+    const onCtx = (e: Event) => { e.preventDefault(); if (!isMobile) reportViolation('right_click'); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key))) { e.preventDefault(); reportViolation('dev_tools'); } };
 
     document.addEventListener('visibilitychange', onVis);
