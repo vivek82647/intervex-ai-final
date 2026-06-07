@@ -15,7 +15,7 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = Cookies.get('access_token');
+  const token = Cookies.get('access_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });

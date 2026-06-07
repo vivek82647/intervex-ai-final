@@ -160,9 +160,16 @@ export default function TestPage() {
   // ─── WebSocket + anti-cheat ───────────────────────────────────────────────────
   useEffect(() => {
     if (!studentId) return;
-    if (studentToken) Cookies.set('access_token', studentToken, { expires: 1 });
+    const resolvedToken = studentToken
+      || Cookies.get('access_token')
+      || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null)
+      || '';
+    if (resolvedToken) {
+      Cookies.set('access_token', resolvedToken, { expires: 1, sameSite: 'lax' });
+      try { localStorage.setItem('access_token', resolvedToken); } catch {}
+    }
     const socket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8000', {
-      auth: { token: studentToken || Cookies.get('access_token') },
+      auth: { token: resolvedToken },
       transports: ['websocket'],
     });
     socket.on('connect', async () => {
@@ -181,7 +188,7 @@ export default function TestPage() {
       try {
         const currentAttemptId = attemptIdRef.current;
         if (currentAttemptId) {
-          const tok = studentToken || Cookies.get('access_token');
+          const tok = studentToken || Cookies.get('access_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : '') || '';
           await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/${currentAttemptId}/terminate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` },
@@ -213,7 +220,7 @@ export default function TestPage() {
         if (newCount >= maxWarnings) {
           toast.error('Too many violations! Test terminated.', { duration: 0 });
           // DB mein bhi terminate karo
-          const tok = studentToken || Cookies.get('access_token');
+          const tok = studentToken || Cookies.get('access_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : '') || '';
           try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/${attemptId}/terminate`, {
               method: 'POST',
@@ -286,7 +293,7 @@ export default function TestPage() {
     setSubmitting(true);
     voiceOut.stop();
     try {
-      document.exitFullscreen().catch(() => {});
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
       socketRef.current?.emit('student_submitted', {});
       await attemptApi.submit(attemptId);
       setSubmitted(true);

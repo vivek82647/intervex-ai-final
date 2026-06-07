@@ -74,15 +74,15 @@ export default function InstructionsPage() {
     checkAttempt();
   }, [sessionId]);
 
-  const startTest = async () => {
+  const startTest = () => {
     setStarting(true);
-    try {
-      // Request fullscreen first
-      await document.documentElement.requestFullscreen().catch(() => {});
-      router.push(`/student/session/${sessionId}/test`);
-    } catch {
-      setStarting(false);
+    // Fullscreen sirf desktop pe — iPhone/iPad pe skip karo
+    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    if (!isMobile && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
     }
+    // Seedha navigate karo — fullscreen ka wait mat karo
+    router.push(`/student/session/${sessionId}/test`);
   };
 
   if (loading) {
