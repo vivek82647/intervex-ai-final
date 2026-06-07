@@ -68,7 +68,22 @@ async def student_join(sid, data):
         await sio.emit("error", {"message": "Missing required fields"}, to=sid)
         return
 
-    # ── IP duplicate check ──────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    # STRICT CHECK 1: Kya yeh student already terminate hua hai is session mein?
+    # (DB check nahi kar sakte yahan, lekin active_sessions mein dekho)
+    # ══════════════════════════════════════════════════════════════════════════
+    if session_id in active_sessions:
+        existing_student = active_sessions[session_id].get(student_id)
+        if existing_student and existing_student.get("status") == "terminated":
+            await sio.emit("session_terminated", {
+                "reason": "You have been terminated from this session.",
+                "terminated_by": "system"
+            }, to=sid)
+            return
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STRICT CHECK 2: IP duplicate check — dusra student same IP se aa raha hai
+    # ══════════════════════════════════════════════════════════════════════════
     if ip_address and ip_address != "Unknown":
         if session_id not in session_ips:
             session_ips[session_id] = {}
@@ -88,10 +103,9 @@ async def student_join(sid, data):
                 "ip_address": ip_address,
                 "timestamp": datetime.utcnow().isoformat()
             })
-            return  # Don't allow join
+            return
 
         session_ips[session_id][ip_address] = student_id
-    # ────────────────────────────────────────────────────────────────────────
 
     socket_users[sid] = {
         "session_id": session_id,
@@ -192,6 +206,12 @@ async def anti_cheat_warning(sid, data):
             }, to=sid)
         elif warning_count >= max_warnings:
             active_sessions[session_id][student_id]["status"] = "terminated"
+            # ── IP ko bhi terminated mark karo — reconnect block ke liye ──
+            student_ip = active_sessions[session_id][student_id].get("ip_address")
+            if student_ip and student_ip != "Unknown":
+                if session_id not in session_ips:
+                    session_ips[session_id] = {}
+                session_ips[session_id][f"TERMINATED_{student_ip}"] = student_id
             await sio.emit("session_terminated", {
                 "reason": f"Terminated due to repeated violations: {warning_type.replace('_', ' ')}",
                 "warning_count": warning_count

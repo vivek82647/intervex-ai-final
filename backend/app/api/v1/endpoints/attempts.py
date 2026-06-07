@@ -29,7 +29,7 @@ async def start_attempt(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Student starts a test attempt — reconnect safe"""
+    """Student starts a test attempt — reconnect safe, strict terminate"""
     session_id = data.get("session_id") or current_user.get("session_id")
     student_id = current_user["user_id"]
 
@@ -49,20 +49,26 @@ async def start_attempt(
     attempt = existing.scalar_one_or_none()
 
     if attempt:
+        # ══════════════════════════════════════════════════════════════════════
+        # STRICT: Submitted ya terminated — koi bhi device se aaye, BLOCK
+        # ══════════════════════════════════════════════════════════════════════
         if attempt.status == "submitted":
             raise HTTPException(status_code=400, detail="You have already submitted this test")
+
         if attempt.status == "terminated":
             if attempt.termination_reason != "REJOIN_APPROVED":
                 raise HTTPException(status_code=403, detail="TERMINATED")
-            # Admin ne approve kiya — reset karo
+            # Admin ne approve kiya — reset karo, lekin started_at NAHI badlo
             attempt.status = "in_progress"
             attempt.termination_reason = None
             attempt.warning_count = 0
-            attempt.started_at = datetime.utcnow()
             await db.commit()
 
-        # ── RECONNECT LOGIC ──────────────────────────────────────────────────
-        # Kitna time bacha hai calculate karo
+        # ══════════════════════════════════════════════════════════════════════
+        # RECONNECT LOGIC — started_at kabhi reset nahi hota
+        # Laptop band hua? IP change hua? Koi baat nahi — time wahi se chalega
+        # jab student ne pehli baar test start kiya tha
+        # ══════════════════════════════════════════════════════════════════════
         total_seconds = session.duration_minutes * 60
         elapsed_seconds = 0
 
@@ -71,7 +77,7 @@ async def start_attempt(
 
         time_remaining_seconds = max(0, total_seconds - elapsed_seconds)
 
-        # Time khatam ho gaya toh auto-submit
+        # Time khatam ho gaya toh auto-submit (laptop band tha tab bhi time chal raha tha)
         if time_remaining_seconds <= 0:
             if attempt.status == "in_progress":
                 attempt.status = "submitted"
@@ -86,7 +92,6 @@ async def start_attempt(
                 status_code=400,
                 detail="Time is up! Your test has been auto-submitted."
             )
-        # ────────────────────────────────────────────────────────────────────
 
         return {
             "attempt_id": attempt.id,
@@ -95,13 +100,12 @@ async def start_attempt(
             "question_order": attempt.question_order,
             "duration_minutes": session.duration_minutes,
             "max_warnings": session.max_warnings,
-            # ── Yeh naye fields hain — frontend ko time_remaining_seconds use karna hai ──
             "time_remaining_seconds": time_remaining_seconds,
             "elapsed_seconds": elapsed_seconds,
-            "reconnected": True,  # frontend ko pata chale ke reconnect hua
+            "reconnected": True,
         }
 
-    # ── NAYA ATTEMPT — pehli baar aa raha hai ────────────────────────────────
+    # ── NAYA ATTEMPT — pehli baar aa raha hai ─────────────────────────────────
     result = await db.execute(
         select(SessionQuestion)
         .where(SessionQuestion.session_id == session_id)
@@ -118,7 +122,7 @@ async def start_attempt(
         session_id=session_id,
         student_id=student_id,
         status="in_progress",
-        started_at=datetime.utcnow(),  # Exact time record karo
+        started_at=datetime.utcnow(),  # Yeh kabhi nahi badlega
         question_order=question_ids,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
@@ -134,7 +138,7 @@ async def start_attempt(
         "question_order": question_ids,
         "duration_minutes": session.duration_minutes,
         "max_warnings": session.max_warnings,
-        "time_remaining_seconds": session.duration_minutes * 60,  # Full time
+        "time_remaining_seconds": session.duration_minutes * 60,
         "elapsed_seconds": 0,
         "reconnected": False,
     }

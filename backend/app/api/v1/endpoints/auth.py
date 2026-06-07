@@ -96,7 +96,7 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/student/join")
 async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    # Session validate karo
+    # ── Session validate karo ──────────────────────────────────────────────────
     result = await db.execute(select(DBSession).where(DBSession.join_link == data.join_link))
     session = result.scalar_one_or_none()
     if not session:
@@ -104,15 +104,32 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
     if session.status != "active":
         raise HTTPException(status_code=400, detail=f"Session is '{session.status}' — cannot join right now")
 
-    # Get real IP
+    # ── Real IP nikalo ─────────────────────────────────────────────────────────
     ip_address = data.ip_address or request.client.host or "Unknown"
 
-    # ── STEP 1: EMAIL CHECK — find student first ───────────────────────────────
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STRICT CHECK 1 — IP BLOCK (koi bhi email ho, IP terminate hua = BLOCK)
+    # Chahe naya phone ho, naya account ho — IP same hai toh BLOCK
+    # ═══════════════════════════════════════════════════════════════════════════
+    if ip_address and ip_address != "Unknown":
+        ip_terminated = await db.execute(
+            select(Attempt).where(
+                Attempt.session_id == session.id,
+                Attempt.status == "terminated",
+                Attempt.ip_address == ip_address,
+                Attempt.termination_reason != "REJOIN_APPROVED",
+            )
+        )
+        if ip_terminated.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="IP_BLOCKED")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STRICT CHECK 2 — EMAIL BLOCK (same email = BLOCK, koi bhi IP/device ho)
+    # ═══════════════════════════════════════════════════════════════════════════
     result = await db.execute(select(Student).where(Student.email == data.email))
     student = result.scalar_one_or_none()
 
     if student:
-        # Check if this student is terminated in this session
         existing = await db.execute(
             select(Attempt).where(
                 Attempt.session_id == session.id,
@@ -122,37 +139,27 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
         attempt = existing.scalar_one_or_none()
 
         if attempt:
+            # Already submitted — block karo
             if attempt.status == "submitted":
                 raise HTTPException(status_code=400, detail="You have already submitted this test")
+
+            # Terminated — sirf REJOIN_APPROVED wala hi aa sakta hai
             if attempt.status == "terminated":
                 if attempt.termination_reason != "REJOIN_APPROVED":
+                    # Koi bhi device/IP se aaye — TERMINATE hi dikhao
                     raise HTTPException(status_code=403, detail="TERMINATED")
-                # Rejoin approved — reset
+                # Admin ne approve kiya — IP bhi update karo, reset karo
                 attempt.status = "in_progress"
                 attempt.termination_reason = None
                 attempt.warning_count = 0
-                attempt.warning_count = 0
-                attempt.started_at = datetime.utcnow()
-                # Update IP to new one
-                attempt.ip_address = ip_address
+                attempt.ip_address = ip_address  # Naya IP store karo
+                # NOTE: started_at reset NAHI karte — remaining time preserve hoti hai
                 await db.commit()
 
-    # ── STEP 2: IP BLOCK CHECK ─────────────────────────────────────────────────
-    # Block if any terminated attempt from this IP exists in this session
-    if ip_address and ip_address != "Unknown":
-        ip_check = await db.execute(
-            select(Attempt).where(
-                Attempt.session_id == session.id,
-                Attempt.status == "terminated",
-                Attempt.ip_address == ip_address,
-                Attempt.termination_reason != "REJOIN_APPROVED",
-            )
-        )
-        if ip_check.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="IP_BLOCKED")
-    # ──────────────────────────────────────────────────────────────────────────
+            # In_progress student reconnect kar raha hai — allow karo
+            # (Laptop band hua tha case — started_at same rahega, time correctly calculate hoga)
 
-    # Create student if not exists
+    # ── Student create karo agar naya hai ──────────────────────────────────────
     if not student:
         student = Student(
             id=str(uuid_lib.uuid4()),
@@ -168,7 +175,7 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
         await db.commit()
         await db.refresh(student)
 
-    # Store IP in attempt when created
+    # ── Token generate karo ────────────────────────────────────────────────────
     token_data = {
         "sub": str(student.id), "email": student.email,
         "role": "student", "session_id": session.id,
