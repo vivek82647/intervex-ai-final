@@ -1,9 +1,9 @@
 """
-Admin Endpoints - Dashboard stats, profile, DB reset
+Admin Endpoints - Dashboard stats, profile
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 
 from app.core.database import get_db
 from app.core.security import require_admin
@@ -74,16 +74,3 @@ async def get_profile(
         "role": admin.role,
         "created_at": admin.created_at,
     }
-
-
-# ─── TEMPORARY: DB Reset — use karne ke baad DELETE kar dena ─────────────────
-@router.delete("/reset-db")
-async def reset_database(db: AsyncSession = Depends(get_db)):
-    """Saari tables saaf karo — TEMPORARY ENDPOINT"""
-    await db.execute(text("DELETE FROM warnings"))
-    await db.execute(text("DELETE FROM answers"))
-    await db.execute(text("DELETE FROM attempts"))
-    await db.execute(text("DELETE FROM students"))
-    await db.execute(text("DELETE FROM otp_records"))
-    await db.commit()
-    return {"message": "DB reset done! Students aur attempts sab saaf ho gaye."}
