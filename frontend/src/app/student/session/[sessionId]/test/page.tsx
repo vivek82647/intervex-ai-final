@@ -79,6 +79,9 @@ export default function TestPage() {
   const socketRef = useRef<Socket | null>(null);
   const attemptIdRef = useRef<string | null>(storedAttemptId || null);
   const timerRef = useRef<NodeJS.Timeout>();
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraIntervalRef = useRef<NodeJS.Timeout>();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const hasLoaded = useRef(false);
 
   const voiceOut = useVoiceOutput();
@@ -281,6 +284,89 @@ export default function TestPage() {
       document.removeEventListener('keydown', onKey);
     };
   }, [attemptId, studentId]);
+
+  // ─── Camera: snapshot har 30 sec, off kare toh warning ───────────────────
+  useEffect(() => {
+    if (!studentId || !attemptId) return;
+    let stopped = false;
+
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        cameraStreamRef.current = stream;
+
+        // Hidden video element — snapshot ke liye
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.muted = true;
+        video.play();
+        videoRef.current = video;
+
+        const takeSnapshot = () => {
+          if (stopped || !video.videoWidth) return;
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 240;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(video, 0, 0, 320, 240);
+              const snapshot = canvas.toDataURL('image/jpeg', 0.5);
+              socketRef.current?.emit('camera_snapshot', {
+                session_id: sessionId,
+                student_id: studentId,
+                snapshot,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          } catch {}
+        };
+
+        // Pehla snapshot 3 sec baad
+        setTimeout(takeSnapshot, 3000);
+        // Phir har 30 sec
+        cameraIntervalRef.current = setInterval(takeSnapshot, 30000);
+
+        // Camera band hone pe detect karo
+        stream.getVideoTracks()[0].addEventListener('ended', async () => {
+          if (stopped) return;
+          // Warning trigger karo
+          const tok = Cookies.get('access_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : '') || '';
+          const currentAttemptId = attemptIdRef.current;
+          if (currentAttemptId) {
+            try {
+              const res = await fetch(\`\${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/\${currentAttemptId}/warning\`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${tok}\` },
+                body: JSON.stringify({ type: 'camera_disabled', details: { message: 'Camera was turned off' } }),
+              });
+              const data = await res.json();
+              socketRef.current?.emit('anti_cheat_warning', {
+                type: 'camera_disabled',
+                session_id: sessionId,
+                student_id: studentId,
+                db_warning_count: data.warning_count,
+                max_warnings: 3,
+              });
+            } catch {}
+          }
+        });
+
+      } catch {
+        // Camera permission denied — warning
+        console.warn('Camera not available');
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      stopped = true;
+      clearInterval(cameraIntervalRef.current);
+      cameraStreamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, [studentId, attemptId]);
 
   const saveAnswer = useCallback(async (questionId: string, answerData: any) => {
     if (!attemptId) return;

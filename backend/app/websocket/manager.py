@@ -202,6 +202,28 @@ async def anti_cheat_warning(sid, data):
 
 
 @sio.event
+async def camera_snapshot(sid, data):
+    user_info = socket_users.get(sid)
+    if not user_info:
+        return
+    session_id = user_info["session_id"]
+    student_id = user_info["student_id"]
+
+    # Latest snapshot store karo (base64)
+    if session_id in active_sessions and student_id in active_sessions[session_id]:
+        active_sessions[session_id][student_id]["last_snapshot"] = data.get("snapshot")
+        active_sessions[session_id][student_id]["snapshot_at"] = data.get("timestamp")
+
+    # Admin ko forward karo
+    await notify_admins(session_id, "camera_snapshot", {
+        "student_id": student_id,
+        "student_name": user_info.get("student_name"),
+        "snapshot": data.get("snapshot"),
+        "timestamp": data.get("timestamp"),
+    })
+
+
+@sio.event
 async def student_submitted(sid, data):
     user_info = socket_users.get(sid)
     if not user_info:

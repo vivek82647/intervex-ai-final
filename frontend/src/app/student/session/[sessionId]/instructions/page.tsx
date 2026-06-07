@@ -4,7 +4,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   Shield, Clock, AlertTriangle, CheckCircle, Monitor,
-  Copy, RefreshCw, Eye, Maximize, ArrowRight, Brain
+  Copy, RefreshCw, Eye, Maximize, ArrowRight, Brain,
+  Camera, CameraOff
 } from 'lucide-react';
 import { sessionApi, attemptApi } from '@/lib/api';
 import { useStudentStore } from '@/store/auth.store';
@@ -37,6 +38,8 @@ export default function InstructionsPage() {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<'pending'|'granted'|'denied'|'checking'>('pending');
+  const [cameraError, setCameraError] = useState('');
 
   useEffect(() => {
     const checkAttempt = async () => {
@@ -74,14 +77,32 @@ export default function InstructionsPage() {
     checkAttempt();
   }, [sessionId]);
 
+  const requestCamera = async () => {
+    setCameraStatus('checking');
+    setCameraError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      // Permission mili — stream band karo (test page pe dobara maangega)
+      stream.getTracks().forEach(t => t.stop());
+      setCameraStatus('granted');
+      // Permission granted store karo
+      try { localStorage.setItem('camera_permission', 'granted'); } catch {}
+    } catch (err: any) {
+      setCameraStatus('denied');
+      setCameraError('Camera access denied. Please allow camera to continue.');
+    }
+  };
+
   const startTest = () => {
+    if (cameraStatus !== 'granted') {
+      setCameraError('Please allow camera access first.');
+      return;
+    }
     setStarting(true);
-    // Fullscreen sirf desktop pe — iPhone/iPad pe skip karo
     const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
     if (!isMobile && document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
-    // Seedha navigate karo — fullscreen ka wait mat karo
     router.push(`/student/session/${sessionId}/test`);
   };
 
@@ -165,6 +186,44 @@ export default function InstructionsPage() {
           </div>
         </div>
 
+        {/* Camera Permission */}
+        <div className="glass-card p-5 mb-5">
+          <h2 className="font-display font-semibold text-white mb-3 flex items-center gap-2">
+            <Camera className="w-4 h-4 text-accent-cyan" /> Camera Verification Required
+          </h2>
+          <p className="text-sm text-white/50 mb-4">
+            Camera must be enabled throughout the test for proctoring. Disabling it will result in a warning.
+          </p>
+          {cameraStatus === 'pending' && (
+            <button onClick={requestCamera}
+              className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 bg-accent-cyan/20 border border-accent-cyan/40 text-accent-cyan hover:bg-accent-cyan/30 transition-all">
+              <Camera className="w-4 h-4" /> Allow Camera Access
+            </button>
+          )}
+          {cameraStatus === 'checking' && (
+            <div className="flex items-center gap-2 text-white/50 text-sm justify-center py-2">
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Requesting camera...
+            </div>
+          )}
+          {cameraStatus === 'granted' && (
+            <div className="flex items-center gap-2 text-accent-emerald text-sm justify-center py-2">
+              <CheckCircle className="w-4 h-4" /> Camera access granted ✓
+            </div>
+          )}
+          {cameraStatus === 'denied' && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-accent-rose text-sm">
+                <CameraOff className="w-4 h-4" /> {cameraError}
+              </div>
+              <button onClick={requestCamera}
+                className="w-full py-2 rounded-xl text-sm bg-accent-rose/20 border border-accent-rose/40 text-accent-rose hover:bg-accent-rose/30 transition-all">
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Agreement */}
         <label className="flex items-start gap-3 mb-5 cursor-pointer group">
           <div
@@ -183,7 +242,7 @@ export default function InstructionsPage() {
         {/* Start button */}
         <motion.button
           onClick={startTest}
-          disabled={!agreed || starting}
+          disabled={!agreed || starting || cameraStatus !== 'granted'}
           whileHover={agreed ? { scale: 1.02 } : {}}
           whileTap={agreed ? { scale: 0.98 } : {}}
           className={`w-full py-4 rounded-2xl font-display font-bold text-lg flex items-center justify-center gap-3 transition-all ${

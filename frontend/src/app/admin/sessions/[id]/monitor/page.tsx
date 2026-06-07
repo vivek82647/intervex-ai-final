@@ -137,6 +137,13 @@ export default function MonitorPage() {
       setStudents(prev => ({ ...prev, [data.student_id]: { ...prev[data.student_id], connected: false } }));
     });
 
+    socket.on('camera_snapshot', (data) => {
+      setStudents(prev => ({
+        ...prev,
+        [data.student_id]: { ...prev[data.student_id], last_snapshot: data.snapshot, snapshot_at: data.timestamp }
+      }));
+    });
+
     socket.on('student_progress', (data) => {
       setStudents(prev => ({ ...prev, [data.student_id]: { ...prev[data.student_id], ...data } }));
     });
@@ -325,6 +332,18 @@ export default function MonitorPage() {
                         <Globe className="w-3 h-3 flex-shrink-0" />
                         <span className="font-mono truncate">{student.ip_address || 'Unknown'}</span>
                         {isDuplicateIP && <span className="text-accent-rose font-medium ml-1">⚠ Shared IP</span>}
+                      </div>
+
+                      {/* Camera Snapshot */}
+                      <div className="rounded-lg overflow-hidden border border-white/10 mb-2" style={{aspectRatio:'4/3', background:'rgba(0,0,0,0.3)'}}>
+                        {(student as any).last_snapshot ? (
+                          <img src={(student as any).last_snapshot} alt="camera" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                            <span className="text-white/20 text-xs">📷</span>
+                            <span className="text-white/15 text-xs">No camera yet</span>
+                          </div>
+                        )}
                       </div>
 
                       {student.email && (
