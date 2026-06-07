@@ -1,19 +1,23 @@
+"""
+Auth Endpoints - INTERVEX AI
+"""
+import uuid as uuid_lib
+from datetime import datetime, timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from sqlalchemy import select, delete as sql_delete
 from pydantic import BaseModel, EmailStr
-from typing import Optional
-from datetime import datetime
+
 from app.core.database import get_db
 from app.core.security import (
-    verify_password, create_access_token, create_refresh_token, decode_token,
-    hash_password, get_current_user
+    create_access_token, create_refresh_token,
+    verify_password, hash_password, get_current_user, decode_token
 )
-from app.models.models import Admin, Student, Session as DBSession, Attempt
-import uuid as uuid_lib
+from app.models.models import Admin, Student, Attempt
+from app.models.models import Session as DBSession, OTPRecord
 
-router = APIRouter(tags=["auth"])
+router = APIRouter()
 
 
 class LoginRequest(BaseModel):
@@ -35,7 +39,7 @@ class StudentJoinRequest(BaseModel):
     email: EmailStr
     roll_number: Optional[str] = None
     phone: Optional[str] = None
-    ip_address: Optional[str] = None  # sent from frontend
+    ip_address: Optional[str] = None
 
 
 # ─── Admin Login ──────────────────────────────────────────────────────────────
@@ -92,11 +96,11 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     }
 
 
-# ─── Student Join — seedha naam+email se, koi OTP nahi ──────────────────────
+# ─── Student Join ─────────────────────────────────────────────────────────────
 
 @router.post("/student/join")
 async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    # ── Session validate karo ──────────────────────────────────────────────────
+    # Session validate karo
     result = await db.execute(select(DBSession).where(DBSession.join_link == data.join_link))
     session = result.scalar_one_or_none()
     if not session:
@@ -104,15 +108,16 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
     if session.status != "active":
         raise HTTPException(status_code=400, detail=f"Session is '{session.status}' — cannot join right now")
 
-    # ── Real IP nikalo ─────────────────────────────────────────────────────────
+    # Real IP get karo
     ip_address = data.ip_address or request.client.host or "Unknown"
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # STRICT CHECK 1 — IP BLOCK (koi bhi email ho, IP terminate hua = BLOCK)
-    # Chahe naya phone ho, naya account ho — IP same hai toh BLOCK
-    # ═══════════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # STRICT BLOCK 1: IP ADDRESS CHECK — chahe koi bhi email ho
+    # Agar is IP se koi bhi student is session mein terminate hua hai
+    # toh seedha block — koi chance nahi
+    # ══════════════════════════════════════════════════════════════════════════
     if ip_address and ip_address != "Unknown":
-        ip_terminated = await db.execute(
+        ip_check = await db.execute(
             select(Attempt).where(
                 Attempt.session_id == session.id,
                 Attempt.status == "terminated",
@@ -120,12 +125,12 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
                 Attempt.termination_reason != "REJOIN_APPROVED",
             )
         )
-        if ip_terminated.scalar_one_or_none():
+        if ip_check.scalar_one_or_none():
             raise HTTPException(status_code=403, detail="IP_BLOCKED")
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # STRICT CHECK 2 — EMAIL BLOCK (same email = BLOCK, koi bhi IP/device ho)
-    # ═══════════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # STRICT BLOCK 2: EMAIL CHECK — same email se dobara nahi
+    # ══════════════════════════════════════════════════════════════════════════
     result = await db.execute(select(Student).where(Student.email == data.email))
     student = result.scalar_one_or_none()
 
@@ -139,27 +144,21 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
         attempt = existing.scalar_one_or_none()
 
         if attempt:
-            # Already submitted — block karo
             if attempt.status == "submitted":
                 raise HTTPException(status_code=400, detail="You have already submitted this test")
-
-            # Terminated — sirf REJOIN_APPROVED wala hi aa sakta hai
             if attempt.status == "terminated":
+                # Admin ne explicitly approve nahi kiya — permanent block
                 if attempt.termination_reason != "REJOIN_APPROVED":
-                    # Koi bhi device/IP se aaye — TERMINATE hi dikhao
                     raise HTTPException(status_code=403, detail="TERMINATED")
-                # Admin ne approve kiya — IP bhi update karo, reset karo
+                # Admin approved — allow rejoin, reset state
                 attempt.status = "in_progress"
                 attempt.termination_reason = None
                 attempt.warning_count = 0
-                attempt.ip_address = ip_address  # Naya IP store karo
-                # NOTE: started_at reset NAHI karte — remaining time preserve hoti hai
+                attempt.started_at = datetime.utcnow()
+                attempt.ip_address = ip_address
                 await db.commit()
 
-            # In_progress student reconnect kar raha hai — allow karo
-            # (Laptop band hua tha case — started_at same rahega, time correctly calculate hoga)
-
-    # ── Student create karo agar naya hai ──────────────────────────────────────
+    # Student create karo agar nahi hai
     if not student:
         student = Student(
             id=str(uuid_lib.uuid4()),
@@ -175,7 +174,6 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
         await db.commit()
         await db.refresh(student)
 
-    # ── Token generate karo ────────────────────────────────────────────────────
     token_data = {
         "sub": str(student.id), "email": student.email,
         "role": "student", "session_id": session.id,
@@ -192,9 +190,7 @@ async def student_join(data: StudentJoinRequest, request: Request, db: AsyncSess
     }
 
 
-
-
-# ─── Student Rejoin Request (blocked/terminated student contacts admin) ────────
+# ─── Student Rejoin Request ────────────────────────────────────────────────────
 
 class RejoinRequestData(BaseModel):
     name: str
@@ -205,11 +201,7 @@ class RejoinRequestData(BaseModel):
 
 @router.post("/student/rejoin-request")
 async def student_rejoin_request(data: RejoinRequestData, db: AsyncSession = Depends(get_db)):
-    """Store rejoin request so admin can see it in dashboard"""
-    from app.models.models import OTPRecord
-    from datetime import timedelta
-    # Reuse OTPRecord table to store request (purpose="rejoin_request")
-    # Clean old requests for this email first
+    """Store rejoin request so admin can see it"""
     await db.execute(
         sql_delete(OTPRecord).where(
             OTPRecord.email == data.email,
@@ -227,6 +219,7 @@ async def student_rejoin_request(data: RejoinRequestData, db: AsyncSession = Dep
     db.add(record)
     await db.commit()
     return {"message": "Request submitted successfully"}
+
 
 # ─── Refresh & Me ─────────────────────────────────────────────────────────────
 

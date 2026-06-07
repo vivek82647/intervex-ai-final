@@ -1,9 +1,11 @@
 """
 Attempts Endpoints - Student test-taking flow
+STRICT: Terminate hone ke baad koi rejoin nahi (bina admin approval ke)
+Laptop band — remaining time se hi shuru hoga
 """
 import uuid
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +31,7 @@ async def start_attempt(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Student starts a test attempt — reconnect safe, strict terminate"""
+    """Student starts a test attempt — reconnect safe, terminate strict"""
     session_id = data.get("session_id") or current_user.get("session_id")
     student_id = current_user["user_id"]
 
@@ -49,26 +51,22 @@ async def start_attempt(
     attempt = existing.scalar_one_or_none()
 
     if attempt:
-        # ══════════════════════════════════════════════════════════════════════
-        # STRICT: Submitted ya terminated — koi bhi device se aaye, BLOCK
-        # ══════════════════════════════════════════════════════════════════════
-        if attempt.status == "submitted":
-            raise HTTPException(status_code=400, detail="You have already submitted this test")
-
+        # ── TERMINATED — strict block ─────────────────────────────────────────
         if attempt.status == "terminated":
             if attempt.termination_reason != "REJOIN_APPROVED":
                 raise HTTPException(status_code=403, detail="TERMINATED")
-            # Admin ne approve kiya — reset karo, lekin started_at NAHI badlo
+            # Admin approved — reset
             attempt.status = "in_progress"
             attempt.termination_reason = None
             attempt.warning_count = 0
+            attempt.started_at = datetime.utcnow()
             await db.commit()
 
-        # ══════════════════════════════════════════════════════════════════════
-        # RECONNECT LOGIC — started_at kabhi reset nahi hota
-        # Laptop band hua? IP change hua? Koi baat nahi — time wahi se chalega
-        # jab student ne pehli baar test start kiya tha
-        # ══════════════════════════════════════════════════════════════════════
+        if attempt.status == "submitted":
+            raise HTTPException(status_code=400, detail="You have already submitted this test")
+
+        # ── RECONNECT LOGIC — laptop band wala case ───────────────────────────
+        # Jitna time beet gaya utna time waste — remaining time se shuru hoga
         total_seconds = session.duration_minutes * 60
         elapsed_seconds = 0
 
@@ -77,7 +75,7 @@ async def start_attempt(
 
         time_remaining_seconds = max(0, total_seconds - elapsed_seconds)
 
-        # Time khatam ho gaya toh auto-submit (laptop band tha tab bhi time chal raha tha)
+        # Time khatam — auto submit
         if time_remaining_seconds <= 0:
             if attempt.status == "in_progress":
                 attempt.status = "submitted"
@@ -100,12 +98,12 @@ async def start_attempt(
             "question_order": attempt.question_order,
             "duration_minutes": session.duration_minutes,
             "max_warnings": session.max_warnings,
-            "time_remaining_seconds": time_remaining_seconds,
+            "time_remaining_seconds": time_remaining_seconds,  # EXACT remaining time
             "elapsed_seconds": elapsed_seconds,
             "reconnected": True,
         }
 
-    # ── NAYA ATTEMPT — pehli baar aa raha hai ─────────────────────────────────
+    # ── NAYA ATTEMPT ──────────────────────────────────────────────────────────
     result = await db.execute(
         select(SessionQuestion)
         .where(SessionQuestion.session_id == session_id)
@@ -122,7 +120,7 @@ async def start_attempt(
         session_id=session_id,
         student_id=student_id,
         status="in_progress",
-        started_at=datetime.utcnow(),  # Yeh kabhi nahi badlega
+        started_at=datetime.utcnow(),
         question_order=question_ids,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
@@ -151,7 +149,6 @@ async def save_answer(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Save/update an answer for a question"""
     result = await db.execute(
         select(Attempt).where(
             Attempt.id == attempt_id,
@@ -163,7 +160,6 @@ async def save_answer(
         raise HTTPException(status_code=400, detail="Invalid attempt")
 
     question_id = data.get("question_id")
-
     existing_ans = await db.execute(
         select(Answer).where(
             Answer.attempt_id == attempt_id,
@@ -202,7 +198,6 @@ async def run_code(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Execute code against visible test cases"""
     result = await db.execute(
         select(Attempt).where(
             Attempt.id == attempt_id,
@@ -237,7 +232,6 @@ async def record_warning(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Record an anti-cheat warning"""
     result = await db.execute(
         select(Attempt).where(
             Attempt.id == attempt_id,
@@ -267,7 +261,6 @@ async def submit_attempt(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Submit the test and trigger evaluation"""
     result = await db.execute(
         select(Attempt).where(
             Attempt.id == attempt_id,
@@ -401,7 +394,6 @@ async def get_attempt_result(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get detailed result for an attempt"""
     result = await db.execute(select(Attempt).where(Attempt.id == attempt_id))
     attempt = result.scalar_one_or_none()
     if not attempt:
@@ -457,6 +449,7 @@ async def get_attempt_result(
         "warnings": warnings
     }
 
+
 @router.post("/{attempt_id}/terminate")
 async def terminate_attempt(
     attempt_id: str,
@@ -464,7 +457,7 @@ async def terminate_attempt(
     current_user: dict = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Called by frontend when session_terminated socket event received"""
+    """Called by frontend when warnings exceed limit"""
     result = await db.execute(
         select(Attempt).where(
             Attempt.id == attempt_id,
@@ -475,7 +468,7 @@ async def terminate_attempt(
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found")
     if attempt.status in ("submitted", "terminated"):
-        return {"status": attempt.status}  # Already done
+        return {"status": attempt.status}
 
     attempt.status = "terminated"
     attempt.termination_reason = data.get("reason", "Policy violation")
