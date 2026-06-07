@@ -326,8 +326,26 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    # Delete session questions first
+    # Delete all related data first (order matters — child tables pehle)
+    from app.models.models import Attempt, Answer, Warning
+
+    # 1. Answers aur Warnings — Attempt ke children
+    attempt_ids_result = await db.execute(
+        select(Attempt.id).where(Attempt.session_id == session_id)
+    )
+    attempt_ids = [row[0] for row in attempt_ids_result.fetchall()]
+
+    if attempt_ids:
+        await db.execute(delete(Warning).where(Warning.attempt_id.in_(attempt_ids)))
+        await db.execute(delete(Answer).where(Answer.attempt_id.in_(attempt_ids)))
+
+    # 2. Attempts
+    await db.execute(delete(Attempt).where(Attempt.session_id == session_id))
+
+    # 3. Session Questions
     await db.execute(delete(SessionQuestion).where(SessionQuestion.session_id == session_id))
+
+    # 4. Session itself
     await db.delete(session)
     await db.commit()
     return {"success": True}
