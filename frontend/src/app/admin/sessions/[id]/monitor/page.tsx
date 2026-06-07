@@ -53,11 +53,25 @@ export default function MonitorPage() {
     const socket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:8000', {
       auth: { token },
       transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
+
+    const watchSession = () => {
+      socket.emit('admin_watch', { session_id: sessionId, admin_id: user?.id || 'admin' });
+    };
 
     socket.on('connect', () => {
       setConnected(true);
-      socket.emit('admin_watch', { session_id: sessionId, admin_id: user?.id || 'admin' });
+      watchSession();
+    });
+
+    socket.on('reconnect', () => {
+      setConnected(true);
+      watchSession();
+      toast.success('Reconnected to live monitor', { duration: 2000 });
     });
 
     socket.on('disconnect', () => setConnected(false));

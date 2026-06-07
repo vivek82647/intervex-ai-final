@@ -26,6 +26,14 @@ export const metadata: Metadata = {
   title: 'INTERVEX AI — AI-Powered Mock Interview Platform',
   description: 'Enterprise-grade AI assessment platform for educators and students',
   keywords: ['mock interview', 'assessment', 'AI evaluation', 'online exam'],
+  appleWebApp: { capable: true, statusBarStyle: 'default' },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
