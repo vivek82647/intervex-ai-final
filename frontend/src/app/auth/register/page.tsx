@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Brain, Mail, Lock, User, Building2, ArrowRight } from 'lucide-react';
+import { Brain, Mail, Lock, User, Building2, ArrowRight, KeyRound } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
@@ -12,13 +12,14 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 export default function RegisterPage() {
   const router = useRouter();
   const { setUser, setTokens } = useAuthStore();
-  const [form, setForm] = useState({ full_name: '', email: '', organization: '', password: '', confirm_password: '' });
+  const [form, setForm] = useState({ full_name: '', email: '', organization: '', password: '', confirm_password: '', secret_code: '' });
   const [loading, setLoading] = useState(false);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.secret_code) { toast.error('Secret code is required'); return; }
     if (form.full_name.length < 2) { toast.error('Name must be at least 2 characters'); return; }
     if (form.password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     if (form.password !== form.confirm_password) { toast.error("Passwords don't match"); return; }
@@ -27,7 +28,7 @@ export default function RegisterPage() {
       const res = await fetch(`${API}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full_name: form.full_name, email: form.email, organization: form.organization || undefined, password: form.password }),
+        body: JSON.stringify({ full_name: form.full_name, email: form.email, organization: form.organization || undefined, password: form.password, secret_code: form.secret_code }),
         signal: AbortSignal.timeout(30000),
       });
       const data = await res.json();
@@ -59,6 +60,12 @@ export default function RegisterPage() {
         <div className="glass-card p-8">
           <h1 className="font-display text-2xl font-bold text-white mb-6">Create Account</h1>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm text-white/60 mb-2">Secret Code <span className="text-accent-rose text-xs">*required</span></label>
+              <div className="relative"><KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <input value={form.secret_code} onChange={f('secret_code')} type="password" placeholder="Enter admin secret code" className="input-field pl-10" /></div>
+              <p className="text-xs text-white/25 mt-1">Contact your platform administrator for the secret code.</p>
+            </div>
             <div>
               <label className="block text-sm text-white/60 mb-2">Full Name</label>
               <div className="relative"><User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />

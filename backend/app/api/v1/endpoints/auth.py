@@ -29,6 +29,10 @@ class RegisterRequest(BaseModel):
     password: str
     full_name: str
     organization: Optional[str] = None
+    secret_code: Optional[str] = None
+
+# ── Secret code — change karna ho toh yahan badlo ──
+ADMIN_SECRET_CODE = "INTAI@64"  # <-- APNA CODE YAHAN LIKHO
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
@@ -65,6 +69,10 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/register")
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    # ── Secret code verify karo ──
+    if not data.secret_code or data.secret_code != ADMIN_SECRET_CODE:
+        raise HTTPException(status_code=403, detail="Invalid secret code. Contact your administrator.")
+
     result = await db.execute(select(Admin).where(Admin.email == data.email))
     existing = result.scalar_one_or_none()
     if existing and existing.is_active:
