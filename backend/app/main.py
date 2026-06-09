@@ -9,12 +9,46 @@ from fastapi.middleware.cors import CORSMiddleware
 import socketio
 
 from app.core.config import settings
-from app.core.database import engine, Base, AsyncSessionLocal
+from app.core.database import engine, Base, AsyncSessionLocal, is_sqlite
 from app.api.v1 import router as api_router
 from app.websocket.manager import sio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def run_migrations():
+    """Add any missing columns without dropping existing data"""
+    async with engine.begin() as conn:
+        if is_sqlite:
+            # SQLite
+            result = await conn.execute(
+                __import__('sqlalchemy').text("PRAGMA table_info(sessions)")
+            )
+            columns = [row[1] for row in result.fetchall()]
+            if "activated_at" not in columns:
+                await conn.execute(
+                    __import__('sqlalchemy').text(
+                        "ALTER TABLE sessions ADD COLUMN activated_at TIMESTAMP"
+                    )
+                )
+                logger.info("✅ SQLite: activated_at column added")
+        else:
+            # PostgreSQL
+            from sqlalchemy import text
+            result = await conn.execute(text(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='sessions' AND column_name='activated_at'
+                """
+            ))
+            if not result.fetchone():
+                await conn.execute(text(
+                    "ALTER TABLE sessions ADD COLUMN activated_at TIMESTAMP WITHOUT TIME ZONE"
+                ))
+                logger.info("✅ PostgreSQL: activated_at column added to sessions")
+            else:
+                logger.info("ℹ️  activated_at column already exists")
 
 
 async def seed_super_admin():
@@ -48,10 +82,12 @@ async def seed_super_admin():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 INTERVEX AI starting...")
-    # Create all tables in PostgreSQL (safe — skips existing tables)
+    # Create all tables (safe — skips existing tables)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ PostgreSQL tables ready")
+    logger.info("✅ Tables ready")
+    # Add any missing columns (safe migration)
+    await run_migrations()
     await seed_super_admin()
     yield
     logger.info("🛑 INTERVEX AI shutting down...")
@@ -66,20 +102,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ---------------------------------------------------------------
-# CORS — list every origin that should be allowed.
-# allow_origins=["*"] conflicts with allow_credentials=True in
-# most browsers, so we list origins explicitly instead.
-# ---------------------------------------------------------------
+# CORS — allow Vercel frontend + localhost
 ALLOWED_ORIGINS = [
-    "https://intervex-ai-final.vercel.app",   # production frontend
-    "http://localhost:3000",                    # local React dev
-    "http://localhost:5173",                    # local Vite dev
+    "https://intervex-ai-final.vercel.app",
+    "https://intervex-ai-final-git-main-viveks-projects.vercel.app",  # Vercel preview URLs
+    "https://*.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Vercel preview deployments bhi allow
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
