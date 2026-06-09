@@ -375,20 +375,46 @@ export default function TestPage() {
   }, [attemptId]);
 
   const submitAttempt = async () => {
-    if (!attemptId || submitting || submitted) return;
+    // attemptIdRef use karo — ye mobile pe bhi reliable hai (state update slow ho sakti hai)
+    const aid = attemptIdRef.current || attemptId;
+    if (!aid) {
+      toast.error('Test not loaded yet. Please wait...');
+      return;
+    }
+    if (submitting || submitted) return;
     setSubmitting(true);
     voiceOut.stop();
     try {
       if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
       socketRef.current?.emit('student_submitted', {});
-      await attemptApi.submit(attemptId);
+      await attemptApi.submit(aid);
       setSubmitted(true);
-      router.push(`/student/result/${attemptId}`);
-    } catch { toast.error('Submission failed'); setSubmitting(false); }
+      // State bhi update karo before redirect
+      setAttemptId(aid);
+      router.push(`/student/result/${aid}`);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || '';
+      if (detail.includes('Already submitted')) {
+        // Already submitted — direct result page pe bhejo
+        setSubmitted(true);
+        router.push(`/student/result/${aid}`);
+        return;
+      }
+      toast.error('Submission failed. Retrying...');
+      setSubmitting(false);
+      // Mobile pe retry — 2 sec baad
+      setTimeout(() => submitAttempt(), 2000);
+    }
   };
 
   const handleSubmit = () => { if (!confirm('Submit your test? You cannot change answers after this.')) return; submitAttempt(); };
-  const handleAutoSubmit = () => { if (submitted) return; toast('⏰ Time is up! Submitting...'); submitAttempt(); };
+  const autoSubmitFiredRef = useRef(false);
+  const handleAutoSubmit = () => {
+    if (submitted || autoSubmitFiredRef.current) return;
+    autoSubmitFiredRef.current = true;
+    toast('⏰ Time is up! Submitting...');
+    submitAttempt();
+  };
 
   const runCode = async () => {
     const q = questions[currentIdx];
@@ -474,10 +500,10 @@ export default function TestPage() {
             {formatTime(timeLeft)}
             <span className="text-xs font-normal text-gray-400 ml-1 hidden sm:inline">Time Left</span>
           </div>
-          <button onClick={handleSubmit} disabled={submitting}
+          <button onClick={handleSubmit} disabled={submitting || submitted}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
             {submitting ? <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-            Submit Test
+            {submitting ? 'Submitting...' : 'Submit Test'}
           </button>
         </div>
       </header>
@@ -615,9 +641,10 @@ export default function TestPage() {
                 Next <ChevronRight className="w-4 h-4" />
               </button>
             ) : (
-              <button onClick={handleSubmit} disabled={submitting}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                <Send className="w-4 h-4" /> Submit Test
+              <button onClick={handleSubmit} disabled={submitting || submitted}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${submitting || submitted ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} text-white`}>
+                {submitting ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
+                {submitting ? 'Submitting...' : 'Submit Test'}
               </button>
             )}
           </div>
@@ -664,9 +691,10 @@ export default function TestPage() {
                 <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${questions.length ? (answered / questions.length) * 100 : 0}%` }} />
               </div>
             </div>
-            <button onClick={handleSubmit} disabled={submitting}
-              className="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2">
-              <Send className="w-4 h-4" /> Submit Test
+            <button onClick={handleSubmit} disabled={submitting || submitted}
+              className={`w-full mt-3 text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2 ${submitting || submitted ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+              {submitting ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
+              {submitting ? 'Submitting...' : 'Submit Test'}
             </button>
           </div>
         </aside>
