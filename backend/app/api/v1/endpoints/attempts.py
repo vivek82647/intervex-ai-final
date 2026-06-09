@@ -65,13 +65,18 @@ async def start_attempt(
         if attempt.status == "submitted":
             raise HTTPException(status_code=400, detail="You have already submitted this test")
 
-        # ── RECONNECT LOGIC — laptop band wala case ───────────────────────────
-        # Jitna time beet gaya utna time waste — remaining time se shuru hoga
+        # RECONNECT LOGIC - time session activate hone se count hoga
+        # Agar student 30 min baad join kare toh sirf 30 min milein
         total_seconds = session.duration_minutes * 60
-        elapsed_seconds = 0
 
-        if attempt.started_at:
+        if session.activated_at:
+            # Session ke activate hone se kitna time gaya (GLOBAL timer)
+            elapsed_seconds = int((datetime.utcnow() - session.activated_at).total_seconds())
+        elif attempt.started_at:
+            # Fallback for old attempts without activated_at
             elapsed_seconds = int((datetime.utcnow() - attempt.started_at).total_seconds())
+        else:
+            elapsed_seconds = 0
 
         time_remaining_seconds = max(0, total_seconds - elapsed_seconds)
 
@@ -129,6 +134,14 @@ async def start_attempt(
     await db.commit()
     await db.refresh(attempt)
 
+    # Naya student join kar raha hai — session activate hone se time count karo
+    total_seconds = session.duration_minutes * 60
+    if session.activated_at:
+        elapsed_at_join = int((datetime.utcnow() - session.activated_at).total_seconds())
+        new_time_remaining = max(0, total_seconds - elapsed_at_join)
+    else:
+        new_time_remaining = total_seconds
+
     return {
         "attempt_id": attempt.id,
         "status": attempt.status,
@@ -136,9 +149,10 @@ async def start_attempt(
         "question_order": question_ids,
         "duration_minutes": session.duration_minutes,
         "max_warnings": session.max_warnings,
-        "time_remaining_seconds": session.duration_minutes * 60,
-        "elapsed_seconds": 0,
+        "time_remaining_seconds": new_time_remaining,
+        "elapsed_seconds": elapsed_at_join if session.activated_at else 0,
         "reconnected": False,
+        "session_title": session.title,
     }
 
 

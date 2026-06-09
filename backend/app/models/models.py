@@ -179,6 +179,7 @@ class Session(Base):
     password: Mapped[Optional[str]] = mapped_column(String(255))
 
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)  # Jab session active hua
     scheduled_start: Mapped[Optional[datetime]] = mapped_column(DateTime)
     scheduled_end: Mapped[Optional[datetime]] = mapped_column(DateTime)
 

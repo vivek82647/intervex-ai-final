@@ -4,6 +4,7 @@ Sessions Endpoints - Create and manage interview sessions
 import uuid
 import secrets
 import string
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -150,12 +151,24 @@ async def get_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # Auto-end: session active hai aur time khatam ho gaya
+    time_remaining_seconds = None
+    if session.status == "active" and session.activated_at:
+        total_seconds = session.duration_minutes * 60
+        elapsed = int((datetime.utcnow() - session.activated_at).total_seconds())
+        time_remaining_seconds = max(0, total_seconds - elapsed)
+        if time_remaining_seconds <= 0:
+            session.status = "ended"
+            await db.commit()
+            time_remaining_seconds = 0
+
     q_count = await db.execute(
         select(func.count(SessionQuestion.id)).where(SessionQuestion.session_id == session_id)
     )
     return SessionOut(
         **{k: v for k, v in session.__dict__.items() if k not in ("_sa_instance_state",)},
-        question_count=q_count.scalar() or 0
+        question_count=q_count.scalar() or 0,
+        time_remaining_seconds=time_remaining_seconds
     )
 
 
@@ -190,6 +203,9 @@ async def update_session_status(
         )
     
     session.status = data.status
+    # Session activate hone ka exact time save karo — timer isi se chalega
+    if data.status == "active":
+        session.activated_at = datetime.utcnow()
     await db.commit()
     return {"success": True, "status": data.status}
 

@@ -1,15 +1,55 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, Copy, Eye, BarChart3, Zap, Clock,
-  BookOpen, Shield, Users, Link as LinkIcon, Trash2
+  BookOpen, Shield, Users, Link as LinkIcon, Trash2, Timer
 } from 'lucide-react';
 import { sessionApi } from '@/lib/api';
 import type { Session } from '@/types';
+
+function useSessionTimer(session: Session | null) {
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    if (!session || session.status !== 'active') {
+      setTimeLeft(null);
+      return;
+    }
+
+    // Server se aya time_remaining_seconds use karo as base
+    if (session.time_remaining_seconds !== undefined && session.time_remaining_seconds !== null) {
+      setTimeLeft(session.time_remaining_seconds);
+    } else if (session.activated_at) {
+      const total = session.duration_minutes * 60;
+      const elapsed = Math.floor((Date.now() - new Date(session.activated_at).getTime()) / 1000);
+      setTimeLeft(Math.max(0, total - elapsed));
+    }
+
+    intervalRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev === null || prev <= 0) return 0;
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalRef.current);
+  }, [session?.id, session?.status, session?.time_remaining_seconds]);
+
+  return timeLeft;
+}
+
+function formatTime(s: number) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`;
+  return `${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`;
+}
 
 export default function SessionDetailPage() {
   const params = useParams();
@@ -18,10 +58,20 @@ export default function SessionDetailPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [activating, setActivating] = useState(false);
+  const timeLeft = useSessionTimer(session);
 
   useEffect(() => {
     sessionApi.get(sessionId).then(r => setSession(r.data)).catch(() => router.push('/admin/sessions')).finally(() => setLoading(false));
   }, [sessionId]);
+
+  // Auto-refresh when timer hits 0
+  useEffect(() => {
+    if (timeLeft === 0 && session?.status === 'active') {
+      setTimeout(() => {
+        sessionApi.get(sessionId).then(r => setSession(r.data));
+      }, 2000);
+    }
+  }, [timeLeft]);
 
   const copyLink = () => {
     if (!session) return;
@@ -70,6 +120,9 @@ export default function SessionDetailPage() {
     archived: 'bg-white/5 text-white/20 border-white/5',
   };
 
+  const isLowTime = timeLeft !== null && timeLeft < 300 && timeLeft > 0;
+  const isExpired = timeLeft === 0 && session.status === 'active';
+
   return (
     <div className="max-w-5xl mx-auto">
       <div className="page-header">
@@ -114,6 +167,36 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Live Timer Banner — active session ke liye */}
+      {session.status === 'active' && timeLeft !== null && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`mb-5 rounded-xl border p-4 flex items-center justify-between ${
+            isExpired
+              ? 'bg-red-500/10 border-red-500/30'
+              : isLowTime
+              ? 'bg-orange-500/10 border-orange-500/30 animate-pulse'
+              : 'bg-brand-500/10 border-brand-500/30'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Timer className={`w-5 h-5 ${isExpired ? 'text-red-400' : isLowTime ? 'text-orange-400' : 'text-brand-400'}`} />
+            <div>
+              <p className={`text-sm font-medium ${isExpired ? 'text-red-400' : isLowTime ? 'text-orange-400' : 'text-brand-400'}`}>
+                {isExpired ? 'Session Time Expired — ending shortly...' : isLowTime ? 'Session ending soon!' : 'Session Time Remaining'}
+              </p>
+              <p className="text-white/40 text-xs mt-0.5">
+                Students joining now will get the remaining time only
+              </p>
+            </div>
+          </div>
+          <div className={`font-mono text-2xl font-bold tabular-nums ${isExpired ? 'text-red-400' : isLowTime ? 'text-orange-400' : 'text-white'}`}>
+            {isExpired ? '00m 00s' : formatTime(timeLeft)}
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Main info */}

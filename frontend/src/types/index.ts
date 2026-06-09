@@ -78,10 +78,12 @@ export interface Session {
   join_link: string;
   join_code: string;
   status: 'draft' | 'active' | 'ended' | 'archived';
+  activated_at?: string;
   scheduled_start?: string;
   scheduled_end?: string;
   created_at: string;
   question_count: number;
+  time_remaining_seconds?: number;
 }
 
 export interface Attempt {

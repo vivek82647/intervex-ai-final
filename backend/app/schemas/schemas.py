@@ -215,10 +215,12 @@ class SessionOut(BaseModel):
     join_link: str
     join_code: str
     status: str
+    activated_at: Optional[datetime] = None
     scheduled_start: Optional[datetime]
     scheduled_end: Optional[datetime]
     created_at: datetime
     question_count: int = 0
+    time_remaining_seconds: Optional[int] = None  # Admin ke liye live countdown
 
     class Config:
         from_attributes = True
