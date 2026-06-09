@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Brain, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
@@ -41,6 +42,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-surface grid-bg flex items-center justify-center p-4">
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle collapsed={true} />
+      </div>
       <div className="fixed top-1/3 -left-40 w-80 h-80 bg-brand-500/15 rounded-full blur-3xl pointer-events-none" />
       <div className="fixed bottom-1/3 -right-40 w-80 h-80 bg-accent-cyan/10 rounded-full blur-3xl pointer-events-none" />
 
