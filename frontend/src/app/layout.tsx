@@ -3,6 +3,7 @@ import { Space_Grotesk, JetBrains_Mono, Syne } from 'next/font/google';
 import './globals.css';
 import { Toaster } from 'react-hot-toast';
 import KeepAlive from '@/components/KeepAlive';
+import ThemeProvider from '@/components/ThemeProvider';
 
 const displayFont = Syne({
   subsets: ['latin'],
@@ -39,22 +40,35 @@ export const viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/* Anti-flash: apply theme before paint */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            var t = JSON.parse(localStorage.getItem('intervex-theme') || '{}');
+            if (t && t.state && t.state.theme === 'light') {
+              document.documentElement.setAttribute('data-theme', 'light');
+            }
+          } catch(e) {}
+        `}} />
+      </head>
       <body className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable} font-body antialiased`}>
-        {children}
-        <KeepAlive />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: 'var(--surface-2)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-default)',
-              borderRadius: '12px',
-            },
-            success: { iconTheme: { primary: '#10B981', secondary: '#fff' } },
-            error: { iconTheme: { primary: '#F43F5E', secondary: '#fff' } },
-          }}
-        />
+        <ThemeProvider>
+          {children}
+          <KeepAlive />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: 'var(--surface-2)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-default)',
+                borderRadius: '12px',
+              },
+              success: { iconTheme: { primary: '#10B981', secondary: '#fff' } },
+              error: { iconTheme: { primary: '#F43F5E', secondary: '#fff' } },
+            }}
+          />
+        </ThemeProvider>
       </body>
     </html>
   );
