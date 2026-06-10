@@ -1,7 +1,6 @@
 """
 Student Portal Models — Intervex backend ke saath compatible
-Uses same Base + engine from app.core.database
-users.id is UUID (String) in Intervex — matched here
+No foreign key to users table (Intervex uses admins, not users)
 """
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean,
@@ -15,7 +14,10 @@ class StudentProfile(Base):
     __tablename__ = "student_profiles"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    # user_id sirf store karta hai — no FK constraint (Intervex ka table structure alag hai)
+    user_id = Column(String(36), unique=True, nullable=False, index=True)
+    name = Column(String(200), nullable=True)
+    email = Column(String(200), nullable=True)
     batch = Column(String(100), nullable=True)
     phone = Column(String(20), nullable=True)
     college = Column(String(200), nullable=True)
@@ -30,7 +32,7 @@ class SessionResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="CASCADE"), nullable=False)
-    interview_session_id = Column(String(36), nullable=True)  # Intervex session UUID
+    interview_session_id = Column(String(36), nullable=True)
 
     title = Column(String(255), nullable=False)
     round = Column(String(100), default="Round 1")
@@ -38,7 +40,7 @@ class SessionResult(Base):
 
     score = Column(Integer, default=0)
     max_score = Column(Integer, default=100)
-    status = Column(String(50), default="completed")  # completed / pending / failed
+    status = Column(String(50), default="completed")
 
     feedback = Column(Text, nullable=True)
     suggestions = Column(JSON, default=list)
@@ -60,7 +62,7 @@ class StudentNotification(Base):
 
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=False)
-    type = Column(String(20), default="info")   # success | info | warning | error
+    type = Column(String(20), default="info")
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

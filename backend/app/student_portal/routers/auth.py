@@ -1,9 +1,9 @@
 """
-Student Portal Auth — Intervex ke existing JWT + users table se link
+Student Portal Auth
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app.core.database import get_db
 from app.student_portal.models.models import StudentProfile
 from app.student_portal.schemas import StudentProfileCreate, StudentProfileOut
@@ -43,13 +43,17 @@ async def create_or_update_profile(data: StudentProfileCreate, db: AsyncSession 
 
 @router.get("/students")
 async def list_students(db: AsyncSession = Depends(get_db)):
-    """Admin: all students with profile info"""
-    rows = await db.execute(text("""
-        SELECT u.id as user_id, u.full_name as name, u.email,
-               sp.id as student_profile_id, sp.batch, sp.college
-        FROM users u
-        LEFT JOIN student_profiles sp ON sp.user_id = u.id
-        WHERE u.role = 'candidate' OR u.role = 'user'
-        ORDER BY u.created_at DESC
-    """))
-    return [dict(row) for row in rows.mappings()]
+    """Admin: list all registered students"""
+    result = await db.execute(select(StudentProfile))
+    students = result.scalars().all()
+    return [
+        {
+            "student_profile_id": s.id,
+            "user_id": s.user_id,
+            "name": s.name,
+            "email": s.email,
+            "batch": s.batch,
+            "college": s.college,
+        }
+        for s in students
+    ]

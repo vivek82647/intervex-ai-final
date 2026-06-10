@@ -4,7 +4,9 @@ from datetime import datetime
 
 
 class StudentProfileCreate(BaseModel):
-    user_id: str  # UUID string
+    user_id: str
+    name: Optional[str] = None
+    email: Optional[str] = None
     batch: Optional[str] = None
     phone: Optional[str] = None
     college: Optional[str] = None
@@ -12,6 +14,8 @@ class StudentProfileCreate(BaseModel):
 class StudentProfileOut(BaseModel):
     id: int
     user_id: str
+    name: Optional[str]
+    email: Optional[str]
     batch: Optional[str]
     phone: Optional[str]
     college: Optional[str]
@@ -58,7 +62,7 @@ class SessionResultOut(BaseModel):
 
 
 class NotificationCreate(BaseModel):
-    student_id: Optional[int] = None  # None = broadcast to all
+    student_id: Optional[int] = None
     title: str
     message: str
     type: str = "info"
