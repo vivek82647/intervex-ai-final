@@ -6,13 +6,14 @@ import dynamic from 'next/dynamic';
 import { Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, CheckCircle, XCircle, Code2, Mic, MicOff, Volume2, VolumeX, Bookmark, BookmarkCheck, RotateCcw } from 'lucide-react';
 import { sessionApi, attemptApi } from '@/lib/api';
 import { useStudentStore } from '@/store/auth.store';
+import { useThemeStore } from '@/store/theme.store';
 import { io, Socket } from 'socket.io-client';
 import Cookies from 'js-cookie';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 const LANGUAGES = ['python', 'javascript', 'java', 'cpp', 'c'];
 
-// ─── Voice Hooks ──────────────────────────────────────────────────────────────
 function useVoiceInput(onResult: (text: string) => void) {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -52,6 +53,12 @@ export default function TestPage() {
   const sessionId = params.sessionId as string;
   const router = useRouter();
   const { studentId, studentName, attemptId: storedAttemptId, token: studentToken, setSession } = useStudentStore();
+  const { theme } = useThemeStore();
+
+  // Apply theme on mount
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : '');
+  }, [theme]);
 
   // Block back button
   useEffect(() => {
@@ -75,7 +82,7 @@ export default function TestPage() {
   const [running, setRunning] = useState(false);
   const [maxWarnings, setMaxWarnings] = useState(3);
   const [sessionTitle, setSessionTitle] = useState('');
-  const [reconnected, setReconnected] = useState(false); // ← NAYA
+  const [reconnected, setReconnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const attemptIdRef = useRef<string | null>(storedAttemptId || null);
   const timerRef = useRef<NodeJS.Timeout>();
@@ -95,7 +102,6 @@ export default function TestPage() {
     }
   });
 
-  // ─── Load ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (hasLoaded.current) return;
     hasLoaded.current = true;
@@ -103,10 +109,8 @@ export default function TestPage() {
       try {
         const startRes = await attemptApi.start({ session_id: sessionId });
         const data = startRes.data;
-
         if (data.status === 'terminated') { router.replace('/student/terminated'); return; }
         if (data.status === 'submitted') { router.replace(`/student/result/${data.attempt_id}`); return; }
-
         const qRes = await sessionApi.getQuestions(sessionId);
         setQuestions(qRes.data);
         setSessionTitle(data.session_title || 'Assessment');
@@ -114,29 +118,17 @@ export default function TestPage() {
         attemptIdRef.current = data.attempt_id;
         setSession({ attemptId: data.attempt_id });
         if (data.max_warnings) setMaxWarnings(data.max_warnings);
-
-        // ── TIMER FIX ──────────────────────────────────────────────────────────
-        // Server se time_remaining_seconds aata hai — wahi use karo
-        // Agar reconnect hua toh remaining time milega, nahi toh full duration
         if (data.time_remaining_seconds !== undefined) {
           setTimeLeft(data.time_remaining_seconds);
         } else {
-          // Fallback: purana behavior
           setTimeLeft((data.duration_minutes || 60) * 60);
         }
-
-        // Reconnect toast
         if (data.reconnected) {
           setReconnected(true);
           const mins = Math.floor((data.time_remaining_seconds || 0) / 60);
           const secs = (data.time_remaining_seconds || 0) % 60;
-          toast.success(
-            `Welcome back! Time remaining: ${mins}m ${secs}s`,
-            { duration: 5000, icon: '🔄' }
-          );
+          toast.success(`Welcome back! Time remaining: ${mins}m ${secs}s`, { duration: 5000, icon: '🔄' });
         }
-        // ──────────────────────────────────────────────────────────────────────
-
       } catch (err: any) {
         const detail = err?.response?.data?.detail || '';
         if (detail.includes('terminated')) { router.replace('/student/terminated'); return; }
@@ -151,7 +143,6 @@ export default function TestPage() {
     init();
   }, [sessionId]);
 
-  // ─── Timer ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (timeLeft <= 0 || submitted) return;
     timerRef.current = setTimeout(() => {
@@ -160,7 +151,6 @@ export default function TestPage() {
     return () => clearTimeout(timerRef.current);
   }, [timeLeft, submitted]);
 
-  // ─── WebSocket + anti-cheat ───────────────────────────────────────────────────
   useEffect(() => {
     if (!studentId) return;
     const resolvedToken = studentToken
@@ -187,7 +177,6 @@ export default function TestPage() {
     socket.on('warning_issued', ({ count, message }: any) => { setWarningCount(count); toast.error(message, { duration: 4000 }); });
     socket.on('session_terminated', async ({ reason }: any) => {
       toast.error(`Session Terminated: ${reason}`, { duration: 0 });
-      // Save termination to DB
       try {
         const currentAttemptId = attemptIdRef.current;
         if (currentAttemptId) {
@@ -209,20 +198,12 @@ export default function TestPage() {
         const res = await attemptApi.recordWarning(attemptId, { type, details });
         const newCount = res.data.warning_count;
         setWarningCount(newCount);
-
-        // DB ka actual count socket ko bhejo — sync rahe monitor pe
         socket.emit('anti_cheat_warning', {
-          type, details,
-          session_id: sessionId,
-          student_id: studentId,
-          max_warnings: maxWarnings,
-          db_warning_count: newCount, // actual DB count
+          type, details, session_id: sessionId, student_id: studentId,
+          max_warnings: maxWarnings, db_warning_count: newCount,
         });
-
-        // DB count se terminate karo — socket count pe depend mat karo
         if (newCount >= maxWarnings) {
           toast.error('Too many violations! Test terminated.', { duration: 0 });
-          // DB mein bhi terminate karo
           const tok = studentToken || Cookies.get('access_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : '') || '';
           try {
             await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/attempts/${attemptId}/terminate`, {
@@ -237,32 +218,16 @@ export default function TestPage() {
     };
 
     const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-
-    // Mobile pe fullscreen nahi — iOS support nahi karta
     if (!isMobile) document.documentElement.requestFullscreen().catch(() => {});
-
     let lastBlurTime = Date.now();
-
-    // Mobile pe visibilitychange/blur/focus ignore karo — false positives bahut hote hain
-    // (notification, home button, screen lock sab trigger karte hain)
-    const onVis = () => {
-      if (isMobile) return;
-      if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() });
-    };
-    const onPageHide = () => {
-      if (isMobile) return;
-      reportViolation('tab_switch', {});
-    };
+    const onVis = () => { if (isMobile) return; if (document.hidden) reportViolation('tab_switch', { ts: new Date().toISOString() }); };
+    const onPageHide = () => { if (isMobile) return; reportViolation('tab_switch', {}); };
     const onBlur = () => { lastBlurTime = Date.now(); };
-    const onFocus = () => {
-      if (isMobile) return;
-      if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime });
-    };
+    const onFocus = () => { if (isMobile) return; if (Date.now() - lastBlurTime > 3000) reportViolation('tab_switch', { gap: Date.now() - lastBlurTime }); };
     const onCopy = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'copy' }); };
     const onPaste = (e: Event) => { e.preventDefault(); reportViolation('copy_paste', { action: 'paste' }); };
     const onCtx = (e: Event) => { e.preventDefault(); if (!isMobile) reportViolation('right_click'); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key))) { e.preventDefault(); reportViolation('dev_tools'); } };
-
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('blur', onBlur);
@@ -271,7 +236,6 @@ export default function TestPage() {
     document.addEventListener('paste', onPaste);
     document.addEventListener('contextmenu', onCtx);
     document.addEventListener('keydown', onKey);
-
     return () => {
       socket.disconnect();
       document.removeEventListener('visibilitychange', onVis);
@@ -285,53 +249,36 @@ export default function TestPage() {
     };
   }, [attemptId, studentId]);
 
-  // ─── Camera: snapshot har 30 sec, off kare toh warning ───────────────────
   useEffect(() => {
     if (!studentId || !attemptId) return;
     let stopped = false;
-
     const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
         cameraStreamRef.current = stream;
-
-        // Hidden video element — snapshot ke liye
         const video = document.createElement('video');
         video.srcObject = stream;
         video.setAttribute('playsinline', 'true');
         video.muted = true;
         video.play();
         videoRef.current = video;
-
         const takeSnapshot = () => {
           if (stopped || !video.videoWidth) return;
           try {
             const canvas = document.createElement('canvas');
-            canvas.width = 320;
-            canvas.height = 240;
+            canvas.width = 320; canvas.height = 240;
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.drawImage(video, 0, 0, 320, 240);
               const snapshot = canvas.toDataURL('image/jpeg', 0.5);
-              socketRef.current?.emit('camera_snapshot', {
-                session_id: sessionId,
-                student_id: studentId,
-                snapshot,
-                timestamp: new Date().toISOString(),
-              });
+              socketRef.current?.emit('camera_snapshot', { session_id: sessionId, student_id: studentId, snapshot, timestamp: new Date().toISOString() });
             }
           } catch {}
         };
-
-        // Pehla snapshot 3 sec baad
         setTimeout(takeSnapshot, 3000);
-        // Phir har 30 sec
         cameraIntervalRef.current = setInterval(takeSnapshot, 30000);
-
-        // Camera band hone pe detect karo
         stream.getVideoTracks()[0].addEventListener('ended', async () => {
           if (stopped) return;
-          // Warning trigger karo
           const tok = Cookies.get('access_token') || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : '') || '';
           const currentAttemptId = attemptIdRef.current;
           if (currentAttemptId) {
@@ -342,30 +289,14 @@ export default function TestPage() {
                 body: JSON.stringify({ type: 'camera_disabled', details: { message: 'Camera was turned off' } }),
               });
               const data = await res.json();
-              socketRef.current?.emit('anti_cheat_warning', {
-                type: 'camera_disabled',
-                session_id: sessionId,
-                student_id: studentId,
-                db_warning_count: data.warning_count,
-                max_warnings: 3,
-              });
+              socketRef.current?.emit('anti_cheat_warning', { type: 'camera_disabled', session_id: sessionId, student_id: studentId, db_warning_count: data.warning_count, max_warnings: 3 });
             } catch {}
           }
         });
-
-      } catch {
-        // Camera permission denied — warning
-        console.warn('Camera not available');
-      }
+      } catch { console.warn('Camera not available'); }
     };
-
     startCamera();
-
-    return () => {
-      stopped = true;
-      clearInterval(cameraIntervalRef.current);
-      cameraStreamRef.current?.getTracks().forEach(t => t.stop());
-    };
+    return () => { stopped = true; clearInterval(cameraIntervalRef.current); cameraStreamRef.current?.getTracks().forEach(t => t.stop()); };
   }, [studentId, attemptId]);
 
   const saveAnswer = useCallback(async (questionId: string, answerData: any) => {
@@ -375,12 +306,8 @@ export default function TestPage() {
   }, [attemptId]);
 
   const submitAttempt = async () => {
-    // attemptIdRef use karo — ye mobile pe bhi reliable hai (state update slow ho sakti hai)
     const aid = attemptIdRef.current || attemptId;
-    if (!aid) {
-      toast.error('Test not loaded yet. Please wait...');
-      return;
-    }
+    if (!aid) { toast.error('Test not loaded yet. Please wait...'); return; }
     if (submitting || submitted) return;
     setSubmitting(true);
     voiceOut.stop();
@@ -389,20 +316,13 @@ export default function TestPage() {
       socketRef.current?.emit('student_submitted', {});
       await attemptApi.submit(aid);
       setSubmitted(true);
-      // State bhi update karo before redirect
       setAttemptId(aid);
       router.push(`/student/result/${aid}`);
     } catch (err: any) {
       const detail = err?.response?.data?.detail || '';
-      if (detail.includes('Already submitted')) {
-        // Already submitted — direct result page pe bhejo
-        setSubmitted(true);
-        router.push(`/student/result/${aid}`);
-        return;
-      }
+      if (detail.includes('Already submitted')) { setSubmitted(true); router.push(`/student/result/${aid}`); return; }
       toast.error('Submission failed. Retrying...');
       setSubmitting(false);
-      // Mobile pe retry — 2 sec baad
       setTimeout(() => submitAttempt(), 2000);
     }
   };
@@ -426,7 +346,10 @@ export default function TestPage() {
   };
 
   const toggleMark = (qId: string) => setMarked(prev => { const n = new Set(prev); n.has(qId) ? n.delete(qId) : n.add(qId); return n; });
-  const clearResponse = (qId: string) => { setAnswers(prev => { const n = {...prev}; delete n[qId]; return n; }); if (attemptId) attemptApi.saveAnswer(attemptId, { question_id: qId, selected_option: null, text_answer: null }).catch(() => {}); };
+  const clearResponse = (qId: string) => {
+    setAnswers(prev => { const n = {...prev}; delete n[qId]; return n; });
+    if (attemptId) attemptApi.saveAnswer(attemptId, { question_id: qId, selected_option: null, text_answer: null }).catch(() => {});
+  };
 
   const formatTime = (s: number) => `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
@@ -444,7 +367,7 @@ export default function TestPage() {
     'answered': 'bg-green-500 text-white border-green-500',
     'marked': 'bg-purple-500 text-white border-purple-500',
     'answered-marked': 'bg-purple-500 text-white border-purple-500',
-    'not-visited': 'bg-white text-gray-500 border-gray-300',
+    'not-visited': 'bg-[var(--surface-1)] text-[var(--text-secondary)] border-[var(--border-default)]',
     'visited': 'bg-red-100 text-red-500 border-red-300',
   };
 
@@ -456,49 +379,52 @@ export default function TestPage() {
 
   if (!currentQ) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--surface)' }}>
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">Loading test...</p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Loading test...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" style={{ fontFamily: "'Segoe UI', sans-serif" }}>
-      {/* Reconnect Banner */}
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--surface)', fontFamily: "'Segoe UI', sans-serif" }}>
       {reconnected && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center">
-          <span className="text-amber-700 text-sm font-medium">
-            🔄 Session resumed — timer continues from where you left off
-          </span>
+          <span className="text-amber-700 text-sm font-medium">🔄 Session resumed — timer continues from where you left off</span>
         </div>
       )}
 
       {/* Top Bar */}
-      <header className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+      <header className="border-b px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-sm"
+        style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <span className="text-white text-xs font-bold">IX</span>
           </div>
           <div className="hidden sm:block">
-            <p className="text-xs text-gray-400 leading-none">Assessment</p>
-            <p className="text-sm font-semibold text-gray-800 leading-tight">{sessionTitle || 'Test'}</p>
+            <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>Assessment</p>
+            <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>{sessionTitle || 'Test'}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {warningCount > 0 && (
             <div className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg">
               <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
               <span className="text-orange-600 text-xs font-medium">{warningCount} Warning{warningCount > 1 ? 's' : ''}</span>
             </div>
           )}
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border font-mono text-sm font-bold ${isLowTime ? 'bg-red-50 border-red-200 text-red-600 animate-pulse' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border font-mono text-sm font-bold ${isLowTime ? 'bg-red-50 border-red-200 text-red-600 animate-pulse' : ''}`}
+            style={!isLowTime ? { background: 'var(--surface-2)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' } : {}}>
             <Clock className="w-4 h-4" />
             {formatTime(timeLeft)}
-            <span className="text-xs font-normal text-gray-400 ml-1 hidden sm:inline">Time Left</span>
+            <span className="text-xs font-normal ml-1 hidden sm:inline" style={{ color: 'var(--text-muted)' }}>Time Left</span>
+          </div>
+          {/* Theme Toggle */}
+          <div className="w-9 h-9 flex items-center justify-center rounded-lg border" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-2)' }}>
+            <ThemeToggle collapsed={true} />
           </div>
           <button onClick={handleSubmit} disabled={submitting || submitted}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
@@ -510,31 +436,39 @@ export default function TestPage() {
 
       <div className="flex flex-1 min-h-0">
         <main className="flex-1 flex flex-col min-w-0">
-          <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
+          {/* Question meta bar */}
+          <div className="border-b px-5 py-3 flex items-center justify-between"
+            style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500">Question <span className="font-semibold text-gray-800">{currentIdx + 1}</span> of {questions.length}</span>
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Question <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{currentIdx + 1}</span> of {questions.length}
+              </span>
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${currentQ.type === 'mcq' ? 'bg-blue-50 text-blue-600' : currentQ.type === 'coding' ? 'bg-cyan-50 text-cyan-600' : 'bg-green-50 text-green-600'}`}>
                 {currentQ.type === 'mcq' ? 'Multiple Choice' : currentQ.type === 'coding' ? 'Coding' : 'Descriptive'}
               </span>
-              <span className="text-xs text-gray-400 capitalize">{currentQ.difficulty}</span>
+              <span className="text-xs capitalize" style={{ color: 'var(--text-muted)' }}>{currentQ.difficulty}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">{currentQ.marks} mark{currentQ.marks !== 1 ? 's' : ''}</span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{currentQ.marks} mark{currentQ.marks !== 1 ? 's' : ''}</span>
               <button onClick={() => toggleMark(currentQ.id)}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${marked.has(currentQ.id) ? 'bg-purple-50 border-purple-300 text-purple-600' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-purple-300'}`}>
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${marked.has(currentQ.id) ? 'bg-purple-50 border-purple-300 text-purple-600' : 'hover:border-purple-300'}`}
+                style={!marked.has(currentQ.id) ? { background: 'var(--surface-2)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' } : {}}>
                 {marked.has(currentQ.id) ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
                 {marked.has(currentQ.id) ? 'Marked' : 'Mark for Review'}
               </button>
               <button onClick={() => voiceOut.setEnabled((e: boolean) => !e)}
-                className={`p-1.5 rounded-lg border text-xs transition-all ${voiceOut.enabled ? 'bg-blue-50 border-blue-200 text-blue-500' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                className={`p-1.5 rounded-lg border text-xs transition-all ${voiceOut.enabled ? 'bg-blue-50 border-blue-200 text-blue-500' : ''}`}
+                style={!voiceOut.enabled ? { background: 'var(--surface-2)', borderColor: 'var(--border-default)', color: 'var(--text-muted)' } : {}}>
                 {voiceOut.enabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
 
+          {/* Question content */}
           <div className="flex-1 overflow-y-auto p-5">
-            <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 shadow-sm">
-              <p className="text-gray-800 text-base leading-relaxed whitespace-pre-wrap">{currentQ.content}</p>
+            <div className="rounded-xl border p-5 mb-5 shadow-sm"
+              style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}>
+              <p className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{currentQ.content}</p>
             </div>
 
             {currentQ.type === 'mcq' && (
@@ -544,11 +478,14 @@ export default function TestPage() {
                   const letters = ['A', 'B', 'C', 'D', 'E'];
                   return (
                     <button key={opt.id} onClick={() => saveAnswer(currentQ.id, { selected_option: opt.id })}
-                      className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30'}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-all ${selected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                      className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${selected ? 'border-blue-500 bg-blue-50' : 'hover:border-blue-300'}`}
+                      style={!selected ? { background: 'var(--surface-1)', borderColor: 'var(--border-default)' } : {}}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-all ${selected ? 'bg-blue-600 text-white' : ''}`}
+                        style={!selected ? { background: 'var(--surface-3)', color: 'var(--text-secondary)' } : {}}>
                         {letters[i] || opt.id.toUpperCase()}
                       </div>
-                      <span className={`text-sm ${selected ? 'text-blue-800 font-medium' : 'text-gray-700'}`}>{opt.text}</span>
+                      <span className={`text-sm ${selected ? 'text-blue-800 font-medium' : ''}`}
+                        style={!selected ? { color: 'var(--text-primary)' } : {}}>{opt.text}</span>
                     </button>
                   );
                 })}
@@ -556,11 +493,13 @@ export default function TestPage() {
             )}
 
             {currentQ.type === 'descriptive' && (
-              <div className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden shadow-sm">
-                <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-100">
-                  <span className="text-xs text-gray-400">Type your answer below or use voice</span>
+              <div className="rounded-xl border-2 overflow-hidden shadow-sm"
+                style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}>
+                <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Type your answer below or use voice</span>
                   <button onClick={voiceIn.listening ? voiceIn.stop : voiceIn.start}
-                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${voiceIn.listening ? 'bg-red-50 border-red-300 text-red-500 animate-pulse' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-blue-300'}`}>
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${voiceIn.listening ? 'bg-red-50 border-red-300 text-red-500 animate-pulse' : 'hover:border-blue-300'}`}
+                    style={!voiceIn.listening ? { background: 'var(--surface-2)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' } : {}}>
                     {voiceIn.listening ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
                     {voiceIn.listening ? 'Stop' : 'Speak'}
                   </button>
@@ -570,9 +509,10 @@ export default function TestPage() {
                   onChange={e => saveAnswer(currentQ.id, { text_answer: e.target.value })}
                   placeholder="Write your detailed answer here..."
                   rows={14}
-                  className="w-full p-4 text-gray-800 text-sm leading-relaxed placeholder:text-gray-300 focus:outline-none resize-none"
+                  className="w-full p-4 text-sm leading-relaxed focus:outline-none resize-none"
+                  style={{ background: 'var(--surface-1)', color: 'var(--text-primary)' }}
                 />
-                <div className="px-4 pb-3 text-xs text-gray-300 text-right">
+                <div className="px-4 pb-3 text-xs text-right" style={{ color: 'var(--text-muted)' }}>
                   {(answers[currentQ.id]?.text_answer || '').length} characters
                 </div>
               </div>
@@ -583,7 +523,8 @@ export default function TestPage() {
                 <div className="flex items-center gap-3">
                   <select value={answers[currentQ.id]?.language || language}
                     onChange={e => { setLanguage(e.target.value); saveAnswer(currentQ.id, { language: e.target.value }); }}
-                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-blue-400">
+                    className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+                    style={{ background: 'var(--surface-2)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
                     {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                   <button onClick={runCode} disabled={running}
@@ -592,13 +533,13 @@ export default function TestPage() {
                     Run Code
                   </button>
                 </div>
-                <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+                <div className="rounded-xl overflow-hidden border shadow-sm" style={{ borderColor: 'var(--border-default)' }}>
                   <MonacoEditor
                     height="320px"
                     language={answers[currentQ.id]?.language || language}
                     value={answers[currentQ.id]?.code_answer || (currentQ.starter_code?.[answers[currentQ.id]?.language || language] || '')}
                     onChange={val => saveAnswer(currentQ.id, { code_answer: val || '', language: answers[currentQ.id]?.language || language })}
-                    theme="vs"
+                    theme={theme === 'light' ? 'vs' : 'vs-dark'}
                     options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 12 } }}
                   />
                 </div>
@@ -622,15 +563,19 @@ export default function TestPage() {
             )}
           </div>
 
-          <div className="bg-white border-t border-gray-200 px-5 py-3 flex items-center justify-between">
+          {/* Bottom Nav */}
+          <div className="border-t px-5 py-3 flex items-center justify-between"
+            style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}>
             <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0}
-              className="flex items-center gap-2 border border-gray-200 hover:border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
+              className="flex items-center gap-2 border rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 transition-colors hover:border-gray-300"
+              style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--surface-2)' }}>
               <ChevronLeft className="w-4 h-4" /> Previous
             </button>
             <div className="flex items-center gap-2">
               {currentQ.type === 'mcq' && answers[currentQ.id]?.selected_option && (
                 <button onClick={() => clearResponse(currentQ.id)}
-                  className="flex items-center gap-1.5 border border-gray-200 hover:border-red-300 text-gray-500 hover:text-red-500 px-3 py-2 rounded-lg text-xs transition-colors">
+                  className="flex items-center gap-1.5 border rounded-lg px-3 py-2 text-xs transition-colors hover:border-red-300 hover:text-red-500"
+                  style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--surface-2)' }}>
                   <RotateCcw className="w-3.5 h-3.5" /> Clear Response
                 </button>
               )}
@@ -650,9 +595,11 @@ export default function TestPage() {
           </div>
         </main>
 
-        <aside className="w-64 bg-white border-l border-gray-200 flex flex-col hidden lg:flex">
-          <div className="p-4 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Palette</p>
+        {/* Right Sidebar */}
+        <aside className="w-64 border-l flex flex-col hidden lg:flex"
+          style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}>
+          <div className="p-4 border-b" style={{ borderColor: 'var(--border-default)' }}>
+            <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>Question Palette</p>
             <div className="grid grid-cols-5 gap-1.5">
               {questions.map((q, i) => {
                 const status = getQStatus(q);
@@ -665,29 +612,32 @@ export default function TestPage() {
               })}
             </div>
           </div>
-          <div className="p-4 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Legend</p>
+          <div className="p-4 border-b" style={{ borderColor: 'var(--border-default)' }}>
+            <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>Legend</p>
             <div className="space-y-2">
               {[
                 { color: 'bg-green-500', label: 'Answered', count: answered },
                 { color: 'bg-purple-500', label: 'Marked for Review', count: markedCount },
-                { color: 'bg-white border-2 border-gray-300', label: 'Not Visited', count: notVisited },
+                { color: 'border-2', label: 'Not Visited', count: notVisited },
               ].map(item => (
                 <div key={item.label} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className={`w-5 h-5 rounded ${item.color} flex-shrink-0`} />
-                    <span className="text-xs text-gray-500">{item.label}</span>
+                    <div className={`w-5 h-5 rounded ${item.color} flex-shrink-0`}
+                      style={item.color === 'border-2' ? { background: 'var(--surface-2)', border: '2px solid var(--border-default)' } : {}} />
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{item.label}</span>
                   </div>
-                  <span className="text-xs font-semibold text-gray-700">{item.count}</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{item.count}</span>
                 </div>
               ))}
             </div>
           </div>
           <div className="p-4 mt-auto">
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-gray-800">{answered}<span className="text-gray-400 text-lg">/{questions.length}</span></p>
-              <p className="text-xs text-gray-400 mt-0.5">Questions Answered</p>
-              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-3">
+            <div className="rounded-xl p-3 text-center" style={{ background: 'var(--surface-2)' }}>
+              <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {answered}<span className="text-lg" style={{ color: 'var(--text-muted)' }}>/{questions.length}</span>
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Questions Answered</p>
+              <div className="w-full rounded-full h-1.5 mt-3" style={{ background: 'var(--surface-3)' }}>
                 <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${questions.length ? (answered / questions.length) * 100 : 0}%` }} />
               </div>
             </div>
