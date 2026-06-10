@@ -9,6 +9,7 @@ import {
   GraduationCap, Zap, Menu, X
 , FileEdit } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const navItems = [
   { href: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -35,13 +36,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className={`flex items-center gap-3 px-4 py-5 border-b border-white/5 ${collapsed ? 'justify-center' : ''}`}>
+      <div className={`flex items-center px-4 py-5 border-b border-white/5 ${collapsed ? 'flex-col gap-2 justify-center' : 'gap-3'}`}>
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-accent-cyan flex items-center justify-center flex-shrink-0 shadow-[0_0_20px_rgba(91,106,245,0.4)]">
           <Brain className="w-5 h-5 text-white" />
         </div>
         {!collapsed && (
-          <span className="font-display text-base font-bold text-white">INTERVEX AI</span>
+          <span className="font-display text-base font-bold text-white flex-1">INTERVEX AI</span>
         )}
+        <ThemeToggle collapsed={true} />
       </div>
 
       {/* Nav */}
@@ -71,6 +73,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <p className="text-xs text-white/30 truncate">{user.email}</p>
           </div>
         )}
+        <ThemeToggle collapsed={collapsed} />
         <button
           onClick={handleLogout}
           className={`nav-item w-full text-accent-rose hover:text-accent-rose hover:bg-accent-rose/10 ${collapsed ? 'justify-center px-2' : ''}`}
@@ -130,7 +133,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <button onClick={() => setMobileOpen(true)} className="text-white/60">
             <Menu className="w-5 h-5" />
           </button>
-          <span className="font-display font-bold text-white text-sm">INTERVEX AI</span>
+          <span className="font-display font-bold text-white text-sm flex-1">INTERVEX AI</span>
+          <ThemeToggle collapsed={true} />
         </div>
 
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
