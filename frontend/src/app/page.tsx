@@ -21,7 +21,7 @@ const stats = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-surface overflow-hidden">
+    <div className="min-h-screen overflow-hidden" style={{ background: "#0D0F1A" }}>
       {/* Grid background */}
       <div className="fixed inset-0 grid-bg opacity-50 pointer-events-none" />
 

@@ -28,17 +28,17 @@ module.exports = {
           rose: '#F43F5E',
         },
         surface: {
-          DEFAULT: '#0D0F1A',
-          1: '#111827',
-          2: '#1A1F35',
-          3: '#222840',
-          4: '#2A3050',
-          card: 'rgba(255,255,255,0.04)',
-          glass: 'rgba(255,255,255,0.06)',
+          DEFAULT: 'var(--surface)',
+          1: 'var(--surface-1)',
+          2: 'var(--surface-2)',
+          3: 'var(--surface-3)',
+          4: 'var(--surface-3)',
+          card: 'var(--surface-card)',
+          glass: 'var(--surface-glass)',
         },
         border: {
-          DEFAULT: 'rgba(255,255,255,0.08)',
-          active: 'rgba(91,106,245,0.5)',
+          DEFAULT: 'var(--border-default)',
+          active: 'var(--border-active)',
         }
       },
       fontFamily: {

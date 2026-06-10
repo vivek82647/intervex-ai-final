@@ -73,7 +73,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <p className="text-xs text-white/30 truncate">{user.email}</p>
           </div>
         )}
-        <ThemeToggle collapsed={collapsed} />
+        <ThemeToggle collapsed={true} />
         <button
           onClick={handleLogout}
           className={`nav-item w-full text-accent-rose hover:text-accent-rose hover:bg-accent-rose/10 ${collapsed ? 'justify-center px-2' : ''}`}
