@@ -40,8 +40,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen grid-bg flex items-center justify-center p-4" style={{ background: "#0D0F1A" }}>
-      </div>
+    <div className="min-h-screen grid-bg flex items-center justify-center p-4" style={{ background: '#0D0F1A' }}>
       <div className="fixed top-1/3 -left-40 w-80 h-80 bg-brand-500/15 rounded-full blur-3xl pointer-events-none" />
       <div className="fixed bottom-1/3 -right-40 w-80 h-80 bg-accent-cyan/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -82,7 +81,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 pt-5 border-t border-white/5 text-center text-sm text-white/40">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/auth/register" className="text-brand-400 hover:text-brand-300 transition-colors">Create Admin Account</Link>
           </div>
         </div>
