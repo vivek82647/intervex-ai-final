@@ -43,7 +43,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen grid-bg" style={{ background: "#0D0F1A" }} flex items-center justify-center p-4">
+    <div className="min-h-screen grid-bg flex items-center justify-center p-4" style={{ background: "#0D0F1A" }}>
       <div className="fixed top-1/4 -right-40 w-80 h-80 bg-brand-500/15 rounded-full blur-3xl pointer-events-none" />
 
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md">

@@ -40,7 +40,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen grid-bg" style={{ background: "#0D0F1A" }} flex items-center justify-center p-4">
+    <div className="min-h-screen grid-bg flex items-center justify-center p-4" style={{ background: "#0D0F1A" }}>
       </div>
       <div className="fixed top-1/3 -left-40 w-80 h-80 bg-brand-500/15 rounded-full blur-3xl pointer-events-none" />
       <div className="fixed bottom-1/3 -right-40 w-80 h-80 bg-accent-cyan/10 rounded-full blur-3xl pointer-events-none" />
