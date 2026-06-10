@@ -13,6 +13,10 @@ from app.core.database import engine, Base, AsyncSessionLocal, is_sqlite
 from app.api.v1 import router as api_router
 from app.websocket.manager import sio
 
+# ── Student Portal import ──────────────────────────────────────────
+from app.student_portal import student_portal_router
+from app.student_portal.models.models import StudentProfile, SessionResult, StudentNotification  # register tables
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,6 @@ async def run_migrations():
     """Add any missing columns without dropping existing data"""
     async with engine.begin() as conn:
         if is_sqlite:
-            # SQLite
             result = await conn.execute(
                 __import__('sqlalchemy').text("PRAGMA table_info(sessions)")
             )
@@ -34,7 +37,6 @@ async def run_migrations():
                 )
                 logger.info("✅ SQLite: activated_at column added")
         else:
-            # PostgreSQL
             from sqlalchemy import text
             result = await conn.execute(text(
                 """
@@ -82,11 +84,9 @@ async def seed_super_admin():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 INTERVEX AI starting...")
-    # Create all tables (safe — skips existing tables)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ Tables ready")
-    # Add any missing columns (safe migration)
+    logger.info("✅ Tables ready (including Student Portal tables)")
     await run_migrations()
     await seed_super_admin()
     yield
@@ -102,25 +102,30 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow Vercel frontend + localhost
+# CORS
 ALLOWED_ORIGINS = [
     "https://intervex-ai-final.vercel.app",
-    "https://intervex-ai-final-git-main-viveks-projects.vercel.app",  # Vercel preview URLs
+    "https://intervex-ai-final-git-main-viveks-projects.vercel.app",
     "https://*.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
+    # Student portal Vercel URL — deploy ke baad update karo
+    "https://student-portal-intervex.vercel.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Vercel preview deployments bhi allow
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+# ── Student Portal routes: /api/student/... ────────────────────────
+app.include_router(student_portal_router, prefix="/api")
 
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
@@ -134,9 +139,8 @@ async def health_check():
         "version": "2.0.0",
         "db": "PostgreSQL",
         "ai": "Groq (llama-3.3-70b)",
+        "student_portal": "enabled",
     }
 
 
-# Entry point for Render / uvicorn:
-#   uvicorn app.main:asgi_app --host 0.0.0.0 --port 8000
 asgi_app = socket_app
