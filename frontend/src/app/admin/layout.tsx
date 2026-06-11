@@ -6,8 +6,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, LayoutDashboard, Users, BookOpen, PlayCircle,
   BarChart3, Settings, LogOut, ChevronLeft, ChevronRight,
-  GraduationCap, Zap, Menu, X
-, FileEdit } from 'lucide-react';
+  GraduationCap, Zap, Menu, X,
+  FileEdit, Key, ShieldCheck, Trophy, ClipboardList, Bell
+} from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import ThemeToggle from '@/components/ThemeToggle';
 
@@ -19,6 +20,14 @@ const navItems = [
   { href: '/admin/students', icon: GraduationCap, label: 'Students' },
   { href: '/admin/classes', icon: Users, label: 'Classes' },
   { href: '/admin/results', icon: BarChart3, label: 'Results' },
+];
+
+const portalNavItems = [
+  { href: '/admin/secret-code', icon: Key, label: 'Secret Codes' },
+  { href: '/admin/portal-students', icon: ShieldCheck, label: 'Portal Students' },
+  { href: '/admin/portal-results', icon: Trophy, label: 'Publish Results' },
+  { href: '/admin/assignments', icon: ClipboardList, label: 'Assignments' },
+  { href: '/admin/portal-notifications', icon: Bell, label: 'Notifications' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -49,6 +58,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
+          const active = pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setMobileOpen(false)}
+              className={`${active ? 'nav-item-active' : 'nav-item'} ${collapsed ? 'justify-center px-2' : ''}`}
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </Link>
+          );
+        })}
+
+        {/* Student Portal Section */}
+        <div className={`pt-3 pb-1 ${collapsed ? 'hidden' : ''}`}>
+          <p className="px-3 text-[10px] font-semibold text-white/30 uppercase tracking-widest">
+            Student Portal
+          </p>
+        </div>
+        {collapsed && <div className="border-t border-white/10 my-2" />}
+
+        {portalNavItems.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
             <Link
