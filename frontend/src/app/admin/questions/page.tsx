@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   Plus, Brain, Upload, Search, Trash2, BookOpen,
-  Sparkles, Code2, AlignLeft, CircleDot, CheckSquare, Square, XCircle
+  Sparkles, Code2, AlignLeft, CircleDot, CheckSquare, Square, XCircle,
+  ChevronDown, ChevronUp, CheckCircle, X, Eye
 } from 'lucide-react';
 import { questionApi, api } from '@/lib/api';
 import type { Question } from '@/types';
@@ -23,6 +24,300 @@ const DIFF_COLOR: Record<string, string> = {
   moderate: 'text-accent-amber', hard: 'text-accent-rose', high: 'text-accent-rose',
 };
 
+// ─── Question Detail Floating Panel ───────────────────────────────────────────
+function QuestionDetailPanel({ question, onClose }: { question: Question; onClose: () => void }) {
+  const cfg = TYPE_CONFIG[question.type];
+  const correctOption = question.options?.find(o => o.is_correct || o.id === question.correct_answer);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.97 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="glass-card w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 relative"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 border border-white/10`}>
+              <cfg.icon className={`w-5 h-5 ${cfg.color}`} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold uppercase tracking-wide ${cfg.color}`}>{question.type}</span>
+                <span className={`text-xs capitalize ${DIFF_COLOR[question.difficulty]}`}>· {question.difficulty}</span>
+                {question.is_ai_generated && (
+                  <span className="text-xs text-brand-400 flex items-center gap-0.5">
+                    <Sparkles className="w-2.5 h-2.5" /> AI Generated
+                  </span>
+                )}
+              </div>
+              <p className="text-white/40 text-xs mt-0.5">
+                Topic: <span className="text-white/70">{question.topic}</span>
+                &nbsp;·&nbsp;{question.marks} mark{question.marks !== 1 ? 's' : ''}
+                {question.negative_marks > 0 && <span className="text-accent-rose"> · -{question.negative_marks} negative</span>}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/30 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Question Text */}
+        <div className="mb-5">
+          <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Question</p>
+          <p className="text-white text-sm leading-relaxed bg-white/5 border border-white/8 rounded-xl p-4">
+            {question.content || question.title || <span className="text-white/30 italic">No question text</span>}
+          </p>
+        </div>
+
+        {/* MCQ Options */}
+        {question.type === 'mcq' && question.options && question.options.length > 0 && (
+          <div className="mb-5">
+            <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Options</p>
+            <div className="space-y-2">
+              {question.options.map((opt, idx) => {
+                const isCorrect = opt.is_correct || opt.id === question.correct_answer;
+                return (
+                  <div
+                    key={opt.id || idx}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                      isCorrect
+                        ? 'border-accent-emerald/50 bg-accent-emerald/10'
+                        : 'border-white/8 bg-surface-glass'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                      isCorrect ? 'border-accent-emerald bg-accent-emerald' : 'border-white/20'
+                    }`}>
+                      {isCorrect && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <span className="text-xs text-white/30 font-mono w-5">{opt.id || String.fromCharCode(65 + idx)})</span>
+                    <span className={`flex-1 text-sm ${isCorrect ? 'text-white font-medium' : 'text-white/70'}`}>
+                      {opt.text || <span className="text-white/30 italic">Empty option</span>}
+                    </span>
+                    {isCorrect && (
+                      <span className="flex items-center gap-1 text-xs text-accent-emerald font-medium">
+                        <CheckCircle className="w-3.5 h-3.5" /> Correct
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Correct Answer Summary */}
+            {correctOption && (
+              <div className="mt-3 p-3 rounded-xl bg-accent-emerald/8 border border-accent-emerald/20">
+                <p className="text-xs text-accent-emerald font-medium">
+                  ✓ Correct Answer: Option {correctOption.id?.toUpperCase() || ''} — {correctOption.text}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Descriptive Answer */}
+        {question.type === 'descriptive' && question.correct_answer && (
+          <div className="mb-5">
+            <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Model Answer / Key Points</p>
+            <div className="bg-white/5 border border-white/8 rounded-xl p-4">
+              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">{question.correct_answer}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Coding Starter Code */}
+        {question.type === 'coding' && question.starter_code && (
+          <div className="mb-5">
+            <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Starter Code</p>
+            <div className="grid md:grid-cols-2 gap-3">
+              {question.starter_code.python && (
+                <div>
+                  <p className="text-xs text-white/30 mb-1">Python</p>
+                  <pre className="bg-white/5 border border-white/8 rounded-xl p-3 text-xs text-accent-cyan font-mono overflow-x-auto">
+                    {question.starter_code.python}
+                  </pre>
+                </div>
+              )}
+              {question.starter_code.javascript && (
+                <div>
+                  <p className="text-xs text-white/30 mb-1">JavaScript</p>
+                  <pre className="bg-white/5 border border-white/8 rounded-xl p-3 text-xs text-accent-amber font-mono overflow-x-auto">
+                    {question.starter_code.javascript}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Explanation */}
+        {question.explanation && (
+          <div className="mb-2">
+            <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Explanation</p>
+            <div className="bg-brand-500/5 border border-brand-500/20 rounded-xl p-4">
+              <p className="text-white/70 text-sm leading-relaxed">{question.explanation}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-between text-xs text-white/25">
+          <span>ID: {question.id}</span>
+          <span>Source: {question.source}</span>
+          <span>{new Date(question.created_at).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Inline expanded row ───────────────────────────────────────────────────────
+function QuestionRow({
+  q, i, isSelected, onSelect, onDelete, onView
+}: {
+  q: Question; i: number; isSelected: boolean;
+  onSelect: () => void; onDelete: () => void; onView: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = TYPE_CONFIG[q.type];
+  const correctOption = q.options?.find(o => o.is_correct || o.id === q.correct_answer);
+
+  return (
+    <motion.div
+      key={q.id}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: i * 0.02 }}
+      className={`glass-card overflow-hidden transition-all group ${isSelected ? 'border-brand-500/40 bg-brand-500/5' : 'hover:border-white/15'}`}
+    >
+      {/* Main row */}
+      <div className="p-4 flex items-center gap-4 cursor-pointer" onClick={onSelect}>
+        {/* Checkbox */}
+        <div className="flex-shrink-0" onClick={e => { e.stopPropagation(); onSelect(); }}>
+          {isSelected
+            ? <CheckSquare className="w-4 h-4 text-brand-400" />
+            : <Square className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors" />}
+        </div>
+
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+          <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          {/* Question content/text - shown prominently */}
+          <p className="text-sm font-medium text-white leading-snug line-clamp-2">
+            {q.content || q.title || <span className="text-white/30 italic">No question text</span>}
+          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <span className={`text-xs capitalize ${DIFF_COLOR[q.difficulty]}`}>{q.difficulty}</span>
+            {/* Topic - clickable to open detail */}
+            <button
+              onClick={e => { e.stopPropagation(); onView(); }}
+              className="text-xs text-brand-400 hover:text-brand-300 underline underline-offset-2 transition-colors"
+            >
+              {q.topic}
+            </button>
+            {q.is_ai_generated && (
+              <span className="text-xs text-brand-400 flex items-center gap-0.5">
+                <Sparkles className="w-2.5 h-2.5" /> AI
+              </span>
+            )}
+            {/* For MCQ: show correct answer hint */}
+            {q.type === 'mcq' && correctOption && (
+              <span className="text-xs text-accent-emerald flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Ans: {correctOption.id?.toUpperCase()}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-white/30 flex-shrink-0">
+          <span>{q.marks}m</span>
+          {q.negative_marks > 0 && <span className="text-accent-rose">-{q.negative_marks}</span>}
+        </div>
+
+        {/* View details button */}
+        <button
+          onClick={e => { e.stopPropagation(); onView(); }}
+          className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-brand-400 transition-all p-1"
+          title="View full details"
+        >
+          <Eye className="w-4 h-4" />
+        </button>
+
+        {/* Expand toggle for MCQ options inline */}
+        {q.type === 'mcq' && q.options && q.options.length > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+            className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white transition-all p-1"
+            title="Show options"
+          >
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        )}
+
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          className="opacity-0 group-hover:opacity-100 text-white/20 hover:text-accent-rose transition-all p-1"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Inline MCQ options expansion */}
+      <AnimatePresence>
+        {expanded && q.type === 'mcq' && q.options && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden border-t border-white/5"
+          >
+            <div className="px-4 pb-4 pt-3 space-y-2 bg-white/2">
+              <p className="text-xs text-white/30 mb-2 uppercase tracking-wide">MCQ Options</p>
+              {q.options.map((opt, idx) => {
+                const isCorrect = opt.is_correct || opt.id === q.correct_answer;
+                return (
+                  <div
+                    key={opt.id || idx}
+                    className={`flex items-center gap-3 p-2.5 rounded-lg border text-sm ${
+                      isCorrect
+                        ? 'border-accent-emerald/40 bg-accent-emerald/8 text-white'
+                        : 'border-white/5 text-white/60'
+                    }`}
+                  >
+                    <span className="text-xs font-mono text-white/30 w-4">
+                      {opt.id?.toUpperCase() || String.fromCharCode(65 + idx)})
+                    </span>
+                    <span className="flex-1">{opt.text}</span>
+                    {isCorrect && (
+                      <span className="text-xs text-accent-emerald flex items-center gap-1 font-medium">
+                        <CheckCircle className="w-3.5 h-3.5" /> Correct
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function QuestionBankPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [stats, setStats] = useState<any>({});
@@ -39,6 +334,7 @@ export default function QuestionBankPage() {
   const [extractForm, setExtractForm] = useState({ type: 'mcq', difficulty: 'medium', count: 10, marks: 1 });
   const [extractFile, setExtractFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [viewQuestion, setViewQuestion] = useState<Question | null>(null);
   const extractFileRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -51,7 +347,7 @@ export default function QuestionBankPage() {
       ]);
       setQuestions(qRes.data);
       setStats(sRes.data);
-      setSelected(new Set()); // clear selection on reload
+      setSelected(new Set());
     } catch { toast.error('Failed to load'); }
     finally { setLoading(false); }
   };
@@ -242,8 +538,7 @@ export default function QuestionBankPage() {
                 <Trash2 className="w-3.5 h-3.5" />
                 {deleting ? 'Deleting...' : `Delete Selected (${selected.size})`}
               </button>
-              <button onClick={() => setSelected(new Set())}
-                className="text-white/30 hover:text-white transition-colors">
+              <button onClick={() => setSelected(new Set())} className="text-white/30 hover:text-white transition-colors">
                 <XCircle className="w-4 h-4" />
               </button>
             </>
@@ -275,45 +570,26 @@ export default function QuestionBankPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {questions.map((q, i) => {
-            const cfg = TYPE_CONFIG[q.type];
-            const isSelected = selected.has(q.id);
-            return (
-              <motion.div key={q.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                className={`glass-card p-4 flex items-center gap-4 hover:border-white/15 transition-all group cursor-pointer ${isSelected ? 'border-brand-500/40 bg-brand-500/5' : ''}`}
-                onClick={() => toggleSelect(q.id)}
-              >
-                {/* Checkbox */}
-                <div className="flex-shrink-0">
-                  {isSelected
-                    ? <CheckSquare className="w-4 h-4 text-brand-400" />
-                    : <Square className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors" />}
-                </div>
-
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0`}>
-                  <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{q.title}</p>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className={`text-xs capitalize ${DIFF_COLOR[q.difficulty]}`}>{q.difficulty}</span>
-                    <span className="text-xs text-white/30">{q.topic}</span>
-                    {q.is_ai_generated && <span className="text-xs text-brand-400 flex items-center gap-0.5"><Sparkles className="w-2.5 h-2.5" /> AI</span>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-white/30">
-                  <span>{q.marks}m</span>
-                  {q.negative_marks > 0 && <span className="text-accent-rose">-{q.negative_marks}</span>}
-                </div>
-                <button onClick={e => { e.stopPropagation(); handleDelete(q.id); }}
-                  className="opacity-0 group-hover:opacity-100 text-white/20 hover:text-accent-rose transition-all p-1">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </motion.div>
-            );
-          })}
+          {questions.map((q, i) => (
+            <QuestionRow
+              key={q.id}
+              q={q}
+              i={i}
+              isSelected={selected.has(q.id)}
+              onSelect={() => toggleSelect(q.id)}
+              onDelete={() => handleDelete(q.id)}
+              onView={() => setViewQuestion(q)}
+            />
+          ))}
         </div>
       )}
+
+      {/* Question Detail Floating Panel */}
+      <AnimatePresence>
+        {viewQuestion && (
+          <QuestionDetailPanel question={viewQuestion} onClose={() => setViewQuestion(null)} />
+        )}
+      </AnimatePresence>
 
       {/* Extract from File Modal */}
       <AnimatePresence>
