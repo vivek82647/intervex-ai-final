@@ -1,119 +1,112 @@
 """
-Notifications Router
-Admin sends → Student reads (read-only for students)
+SP Notifications - Admin sends, student reads
 """
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from pydantic import BaseModel
+from typing import Optional, List
+
 from app.core.database import get_db
-from app.student_portal.models.models import StudentNotification, StudentProfile
-from app.student_portal.schemas import NotificationCreate, NotificationOut
+from app.core.security import require_admin
+from app.student_portal.models.models import SPNotification, SPUser
 
-router = APIRouter(prefix="/api/student-portal/notifications", tags=["SP Notifications"])
-
-
-# Student: get own notifications
-@router.get("/student/{user_id}", response_model=List[NotificationOut])
-async def get_my_notifications(user_id: int, db: AsyncSession = Depends(get_db)):
-    sp = await db.execute(
-        select(StudentProfile).where(StudentProfile.user_id == user_id)
-    )
-    profile = sp.scalar_one_or_none()
-    if not profile:
-        return []
-
-    result = await db.execute(
-        select(StudentNotification)
-        .where(StudentNotification.student_id == profile.id)
-        .order_by(StudentNotification.created_at.desc())
-    )
-    return result.scalars().all()
+router = APIRouter(prefix="/sp/notifications", tags=["SP Notifications"])
 
 
-# Student: unread count
-@router.get("/student/{user_id}/unread-count")
-async def unread_count(user_id: int, db: AsyncSession = Depends(get_db)):
-    sp = await db.execute(
-        select(StudentProfile).where(StudentProfile.user_id == user_id)
-    )
-    profile = sp.scalar_one_or_none()
-    if not profile:
-        return {"count": 0}
-
-    result = await db.execute(
-        select(StudentNotification)
-        .where(StudentNotification.student_id == profile.id)
-        .where(StudentNotification.is_read == False)
-    )
-    return {"count": len(result.scalars().all())}
+class SendNotificationRequest(BaseModel):
+    student_id: Optional[str] = None   # None = broadcast to all students
+    title: str
+    message: str
+    type: str = "info"   # success | info | warning | error
 
 
-# Student: mark one as read
-@router.patch("/{notif_id}/read")
-async def mark_read(notif_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(StudentNotification).where(StudentNotification.id == notif_id)
-    )
-    notif = result.scalar_one_or_none()
-    if not notif:
-        raise HTTPException(status_code=404, detail="Not found")
-    notif.is_read = True
-    await db.commit()
-    return {"ok": True}
-
-
-# Student: mark all as read
-@router.patch("/student/{user_id}/read-all")
-async def mark_all_read(user_id: int, db: AsyncSession = Depends(get_db)):
-    sp = await db.execute(
-        select(StudentProfile).where(StudentProfile.user_id == user_id)
-    )
-    profile = sp.scalar_one_or_none()
-    if not profile:
-        return {"ok": True}
-
-    result = await db.execute(
-        select(StudentNotification)
-        .where(StudentNotification.student_id == profile.id)
-        .where(StudentNotification.is_read == False)
-    )
-    for n in result.scalars().all():
-        n.is_read = True
-    await db.commit()
-    return {"ok": True}
-
-
-# Admin: send notification (individual or broadcast)
-@router.post("/", response_model=List[NotificationOut])
-async def send_notification(data: NotificationCreate, db: AsyncSession = Depends(get_db)):
-    created = []
+# ── Admin: Send Notification ───────────────────────────────────
+@router.post("")
+async def send_notification(
+    data: SendNotificationRequest,
+    current_user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    admin_id = current_user["user_id"]
 
     if data.student_id:
-        # Individual — student_id here is StudentProfile.id
-        notif = StudentNotification(
-            student_id=data.student_id,
+        # Single student
+        student = await db.execute(
+            select(SPUser).where(SPUser.id == data.student_id, SPUser.admin_id == admin_id)
+        )
+        if not student.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Student not found")
+        student_ids = [data.student_id]
+    else:
+        # Broadcast to all students of this admin
+        result = await db.execute(
+            select(SPUser.id).where(SPUser.admin_id == admin_id, SPUser.is_active == True)
+        )
+        student_ids = [row[0] for row in result.fetchall()]
+
+    if not student_ids:
+        raise HTTPException(status_code=404, detail="No students found")
+
+    for sid in student_ids:
+        notif = SPNotification(
+            id=str(uuid.uuid4()),
+            student_id=sid,
+            admin_id=admin_id,
             title=data.title,
             message=data.message,
             type=data.type,
         )
         db.add(notif)
-        created.append(notif)
-    else:
-        # Broadcast — send to all student profiles
-        result = await db.execute(select(StudentProfile))
-        profiles = result.scalars().all()
-        for profile in profiles:
-            notif = StudentNotification(
-                student_id=profile.id,
-                title=data.title,
-                message=data.message,
-                type=data.type,
-            )
-            db.add(notif)
-            created.append(notif)
 
     await db.commit()
-    for n in created:
-        await db.refresh(n)
-    return created
+    return {"message": f"Notification sent to {len(student_ids)} student(s)"}
+
+
+# ── Student: Get notifications ─────────────────────────────────
+@router.get("/my/{student_id}")
+async def my_notifications(
+    student_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(SPNotification)
+        .where(SPNotification.student_id == student_id)
+        .order_by(SPNotification.created_at.desc())
+    )
+    notifs = result.scalars().all()
+    return [
+        {k: v for k, v in n.__dict__.items() if k != "_sa_instance_state"}
+        for n in notifs
+    ]
+
+
+# ── Student: Mark read ─────────────────────────────────────────
+@router.patch("/{notif_id}/read")
+async def mark_read(notif_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(SPNotification).where(SPNotification.id == notif_id)
+    )
+    notif = result.scalar_one_or_none()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notif.is_read = True
+    await db.commit()
+    return {"success": True}
+
+
+# ── Student: Mark all read ─────────────────────────────────────
+@router.patch("/my/{student_id}/read-all")
+async def mark_all_read(student_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(SPNotification).where(
+            SPNotification.student_id == student_id,
+            SPNotification.is_read == False
+        )
+    )
+    notifs = result.scalars().all()
+    for n in notifs:
+        n.is_read = True
+    await db.commit()
+    return {"updated": len(notifs)}

@@ -13,16 +13,18 @@ from app.core.database import engine, Base, AsyncSessionLocal, is_sqlite
 from app.api.v1 import router as api_router
 from app.websocket.manager import sio
 
-# ── Student Portal import ──────────────────────────────────────────
-from app.student_portal import student_portal_router
-from app.student_portal.models.models import StudentProfile, SessionResult, StudentNotification  # register tables
+# ── Student Portal ─────────────────────────────────────────────
+from app.student_portal import sp_router
+from app.student_portal.models.models import (
+    SPSecretCode, SPUser, SPResult,
+    SPAssignment, SPSubmission, SPNotification
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 async def run_migrations():
-    """Add any missing columns without dropping existing data"""
     async with engine.begin() as conn:
         if is_sqlite:
             result = await conn.execute(
@@ -39,22 +41,19 @@ async def run_migrations():
         else:
             from sqlalchemy import text
             result = await conn.execute(text(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name='sessions' AND column_name='activated_at'
-                """
+                """SELECT column_name FROM information_schema.columns
+                WHERE table_name='sessions' AND column_name='activated_at'"""
             ))
             if not result.fetchone():
                 await conn.execute(text(
                     "ALTER TABLE sessions ADD COLUMN activated_at TIMESTAMP WITHOUT TIME ZONE"
                 ))
-                logger.info("✅ PostgreSQL: activated_at column added to sessions")
+                logger.info("✅ PostgreSQL: activated_at column added")
             else:
                 logger.info("ℹ️  activated_at column already exists")
 
 
 async def seed_super_admin():
-    """Create the super admin account if it doesn't exist yet"""
     from sqlalchemy import select
     from app.models.models import Admin
     from app.core.security import hash_password
@@ -102,15 +101,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
 ALLOWED_ORIGINS = [
     "https://intervex-ai-final.vercel.app",
     "https://intervex-ai-final-git-main-viveks-projects.vercel.app",
     "https://*.vercel.app",
     "http://localhost:3000",
+    "http://localhost:3001",
     "http://localhost:5173",
-    # Student portal Vercel URL — deploy ke baad update karo
-    "https://student-portal-intervex.vercel.app",
 ]
 
 app.add_middleware(
@@ -124,8 +121,8 @@ app.add_middleware(
 
 app.include_router(api_router, prefix="/api/v1")
 
-# ── Student Portal routes: /api/student/... ────────────────────────
-app.include_router(student_portal_router, prefix="/api")
+# ── Student Portal routes: /api/sp/... ─────────────────────────
+app.include_router(sp_router, prefix="/api")
 
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
@@ -138,7 +135,7 @@ async def health_check():
         "service": "INTERVEX AI",
         "version": "2.0.0",
         "db": "PostgreSQL",
-        "ai": "Groq (llama-3.3-70b)",
+        "ai": "Groq",
         "student_portal": "enabled",
     }
 
