@@ -159,10 +159,15 @@ class QuestionOut(BaseModel):
     topic: str
     title: str
     content: str
-    options: Optional[List[Dict]]
+    options: Optional[List[Dict]] = None
+    correct_answer: Optional[str] = None
+    explanation: Optional[str] = None
     marks: float
     negative_marks: float
-    time_limit_seconds: Optional[int]
+    time_limit_seconds: Optional[int] = None
+    test_cases: Optional[List[Dict]] = None
+    starter_code: Optional[Dict[str, str]] = None
+    rubric: Optional[Dict[str, Any]] = None
     is_ai_generated: bool
     source: str
     created_at: datetime
