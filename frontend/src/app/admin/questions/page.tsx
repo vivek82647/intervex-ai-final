@@ -125,37 +125,101 @@ function QuestionDetailPanel({ question, onClose }: { question: Question; onClos
         )}
 
         {/* Descriptive Answer */}
-        {question.type === 'descriptive' && question.correct_answer && (
+        {question.type === 'descriptive' && (
           <div className="mb-5">
             <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Model Answer / Key Points</p>
-            <div className="bg-white/5 border border-white/8 rounded-xl p-4">
-              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">{question.correct_answer}</p>
-            </div>
+            {question.correct_answer ? (
+              <div className="bg-accent-emerald/5 border border-accent-emerald/20 rounded-xl p-4">
+                <p className="text-white/85 text-sm leading-relaxed whitespace-pre-wrap">{question.correct_answer}</p>
+              </div>
+            ) : (
+              <p className="text-white/30 text-sm italic">No model answer provided</p>
+            )}
+            {/* Rubric */}
+            {(question as any).rubric?.criteria && (
+              <div className="mt-3">
+                <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Marking Rubric</p>
+                <div className="space-y-2">
+                  {(question as any).rubric.criteria.map((c: any, idx: number) => (
+                    <div key={idx} className="flex items-start gap-3 p-3 rounded-xl bg-white/3 border border-white/8">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-white">{c.name}</p>
+                        <p className="text-xs text-white/50 mt-0.5">{c.description}</p>
+                      </div>
+                      <span className="text-xs font-semibold text-accent-amber bg-accent-amber/10 border border-accent-amber/20 px-2 py-1 rounded-lg">
+                        {c.max_marks}m
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-end pt-1">
+                    <span className="text-xs text-white/40">Total: <span className="text-white font-medium">{(question as any).rubric.total_marks}m</span></span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Coding Starter Code */}
-        {question.type === 'coding' && question.starter_code && (
+        {question.type === 'coding' && (
           <div className="mb-5">
-            <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Starter Code</p>
-            <div className="grid md:grid-cols-2 gap-3">
-              {question.starter_code.python && (
-                <div>
-                  <p className="text-xs text-white/30 mb-1">Python</p>
-                  <pre className="bg-white/5 border border-white/8 rounded-xl p-3 text-xs text-accent-cyan font-mono overflow-x-auto">
-                    {question.starter_code.python}
-                  </pre>
+            {question.starter_code && (
+              <>
+                <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Starter Code</p>
+                <div className="grid md:grid-cols-2 gap-3 mb-4">
+                  {question.starter_code.python && (
+                    <div>
+                      <p className="text-xs text-white/30 mb-1">🐍 Python</p>
+                      <pre className="bg-white/5 border border-white/8 rounded-xl p-3 text-xs text-accent-cyan font-mono overflow-x-auto whitespace-pre-wrap">
+                        {question.starter_code.python}
+                      </pre>
+                    </div>
+                  )}
+                  {question.starter_code.javascript && (
+                    <div>
+                      <p className="text-xs text-white/30 mb-1">🟨 JavaScript</p>
+                      <pre className="bg-white/5 border border-white/8 rounded-xl p-3 text-xs text-accent-amber font-mono overflow-x-auto whitespace-pre-wrap">
+                        {question.starter_code.javascript}
+                      </pre>
+                    </div>
+                  )}
                 </div>
-              )}
-              {question.starter_code.javascript && (
-                <div>
-                  <p className="text-xs text-white/30 mb-1">JavaScript</p>
-                  <pre className="bg-white/5 border border-white/8 rounded-xl p-3 text-xs text-accent-amber font-mono overflow-x-auto">
-                    {question.starter_code.javascript}
-                  </pre>
+              </>
+            )}
+            {/* Test Cases */}
+            {question.test_cases && question.test_cases.length > 0 && (
+              <>
+                <p className="text-xs text-white/40 mb-2 uppercase tracking-wide">Test Cases</p>
+                <div className="space-y-2">
+                  {question.test_cases.map((tc, idx) => (
+                    <div key={tc.id || idx} className={`rounded-xl border p-3 ${tc.is_hidden ? 'border-accent-rose/20 bg-accent-rose/5' : 'border-white/8 bg-white/3'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-white/60">Test Case {idx + 1}</span>
+                        <div className="flex items-center gap-2">
+                          {tc.marks > 0 && <span className="text-xs text-accent-amber">{tc.marks}m</span>}
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${tc.is_hidden ? 'text-accent-rose border-accent-rose/30 bg-accent-rose/10' : 'text-accent-emerald border-accent-emerald/30 bg-accent-emerald/10'}`}>
+                            {tc.is_hidden ? '🔒 Hidden' : '👁 Visible'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs text-white/30 mb-1">Input</p>
+                          <pre className="text-xs text-white/70 font-mono bg-black/20 rounded-lg p-2 overflow-x-auto">{tc.input || '—'}</pre>
+                        </div>
+                        <div>
+                          <p className="text-xs text-white/30 mb-1">Expected Output</p>
+                          <pre className="text-xs text-accent-emerald font-mono bg-black/20 rounded-lg p-2 overflow-x-auto">{tc.expected_output || '—'}</pre>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
+              </>
+            )}
+            {(!question.test_cases || question.test_cases.length === 0) && !question.starter_code && (
+              <p className="text-white/30 text-sm italic">No coding details available</p>
+            )}
           </div>
         )}
 
