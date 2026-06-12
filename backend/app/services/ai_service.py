@@ -263,4 +263,41 @@ Return ONLY this JSON:
             }
 
 
+
+    async def chat(self, messages: list, system: str = "") -> str:
+        """Multi-turn chat with message history"""
+        if not settings.GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY not set")
+        
+        all_messages = []
+        if system:
+            all_messages.append({"role": "system", "content": system})
+        all_messages.extend(messages)
+        
+        last_err = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        GROQ_URL,
+                        headers={
+                            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": GROQ_MODEL,
+                            "messages": all_messages,
+                            "temperature": 0.7,
+                            "max_tokens": 1024,
+                        },
+                    )
+                    response.raise_for_status()
+                    return response.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    import asyncio
+                    await asyncio.sleep(2)
+        raise last_err
+
 ai_service = AIService()
