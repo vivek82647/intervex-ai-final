@@ -333,7 +333,7 @@ async def edit_session(
     current_user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Edit session details — title, description, duration, passing_marks (anytime)"""
+    """Edit session details - title, description, duration, passing_marks (anytime)"""
     result = await db.execute(
         select(DBSession).where(
             DBSession.id == session_id,
