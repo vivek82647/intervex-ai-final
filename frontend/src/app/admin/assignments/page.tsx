@@ -13,7 +13,7 @@ import {
 import { portalAPI } from "@/lib/portalAPI";
 
 interface Assignment {
-  id: number;
+  id: string;
   title: string;
   description: string;
   deadline?: string;
@@ -22,7 +22,7 @@ interface Assignment {
 }
 
 interface Submission {
-  id: number;
+  id: string;
   student_name: string;
   student_email: string;
   submitted_at: string;
@@ -39,11 +39,11 @@ export default function AssignmentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<Record<number, Submission[]>>({});
-  const [loadingSubs, setLoadingSubs] = useState<number | null>(null);
+  const [loadingSubs, setLoadingSubs] = useState<string | null>(null);
   const [feedbackMap, setFeedbackMap] = useState<Record<number, string>>({});
-  const [savingFeedback, setSavingFeedback] = useState<number | null>(null);
+  const [savingFeedback, setSavingFeedback] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const fetchAssignments = async () => {
