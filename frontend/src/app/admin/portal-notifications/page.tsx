@@ -52,7 +52,7 @@ export default function PortalNotificationsPage() {
       await portalAPI.sendNotification({
         title: title.trim(),
         message: message.trim(),
-        student_id: target === "specific" ? parseInt(studentId) : undefined,
+        student_id: target === "specific" ? studentId : undefined,
       });
       setSuccess(
         target === "all"
