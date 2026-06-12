@@ -2,7 +2,7 @@ const BASE = "https://intervex-ai-final.onrender.com/api/sp";
 
 function getHeaders() {
   const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
