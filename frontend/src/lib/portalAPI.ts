@@ -22,47 +22,39 @@ async function req(path: string, options: RequestInit = {}) {
 }
 
 export const portalAPI = {
-  // Secret Codes
-  getCodes: () => req("/auth/secret-code"),
-  createCode: (data: { code: string; max_uses?: number }) =>
+  // Secret Codes — route is /secret-codes (plural)
+  getCodes: () => req("/auth/secret-codes"),
+  createCode: (data: { code: string; label?: string; max_uses?: number }) =>
     req("/auth/secret-code", { method: "POST", body: JSON.stringify(data) }),
-  toggleCode: (id: number, is_active: boolean) =>
-    req(`/auth/secret-code/${id}`, {
+  toggleCode: (id: string) =>
+    req(`/auth/secret-code/${id}/toggle`, { method: "PATCH" }),
+  // no delete route in backend — omitted
+
+  // Students — route is /students not /my-students
+  getStudents: () => req("/auth/students"),
+  toggleBlock: (studentId: string, is_active: boolean) =>
+    req(`/auth/students/${studentId}/toggle`, {
       method: "PATCH",
       body: JSON.stringify({ is_active }),
-    }),
-  deleteCode: (id: number) =>
-    req(`/auth/secret-code/${id}`, { method: "DELETE" }),
-
-  // Students
-  getStudents: () => req("/auth/my-students"),
-  toggleBlock: (studentId: number, block: boolean) =>
-    req(`/auth/students/${studentId}/block`, {
-      method: "PATCH",
-      body: JSON.stringify({ blocked: block }),
     }),
 
   // Results
   getAdminResults: () => req("/results/admin"),
   publishResult: (data: object) =>
-    req("/results/publish", { method: "POST", body: JSON.stringify(data) }),
+    req("/results", { method: "POST", body: JSON.stringify(data) }),
 
   // Assignments
   getAdminAssignments: () => req("/assignments/admin"),
   createAssignment: (data: object) =>
-    req("/assignments/", { method: "POST", body: JSON.stringify(data) }),
-  getSubmissions: (id: number) => req(`/assignments/${id}/submissions`),
-  giveFeedback: (submissionId: number, feedback: string) =>
-    req(`/assignments/submissions/${submissionId}/feedback`, {
-      method: "POST",
-      body: JSON.stringify({ feedback }),
-    }),
+    req("/assignments", { method: "POST", body: JSON.stringify(data) }),
+  getSubmissions: (id: string) => req(`/assignments/${id}/submissions`),
 
-  // Notifications
+  // Notifications — route is /sp/notifications (no /send suffix)
   sendNotification: (data: {
     title: string;
     message: string;
-    student_id?: number;
+    type?: string;
+    student_id?: string;
   }) =>
-    req("/notifications/send", { method: "POST", body: JSON.stringify(data) }),
+    req("/notifications", { method: "POST", body: JSON.stringify(data) }),
 };
