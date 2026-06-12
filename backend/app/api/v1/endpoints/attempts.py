@@ -392,6 +392,52 @@ async def submit_attempt(
 
     await db.commit()
 
+
+    # -- AUTO-PUBLISH to Student Portal --------------------------------------
+    try:
+        from app.student_portal.models.models import SPResult, SPUser
+        from sqlalchemy import select as sp_select
+
+        sp_user_result = await db.execute(
+            sp_select(SPUser).where(SPUser.email == student.email)
+        )
+        sp_user = sp_user_result.scalar_one_or_none()
+
+        if sp_user:
+            pct = attempt.percentage or 0
+            passing = session.passing_marks or 60
+
+            if pct >= passing:
+                sp_status = "selected"
+                next_round_eligible = True
+            else:
+                sp_status = "rejected"
+                next_round_eligible = False
+
+            import uuid as _uuid
+            sp_result = SPResult(
+                id=str(_uuid.uuid4()),
+                student_id=sp_user.id,
+                admin_id=sp_user.admin_id,
+                admin_name="Intervex AI",
+                session_title=session.title if session else "Assessment",
+                session_date=now.strftime("%Y-%m-%d"),
+                round_name="Round 1",
+                score=round(attempt.total_score or 0, 1),
+                max_score=round(attempt.max_score or 100, 1),
+                percentage=round(pct, 1),
+                status=sp_status,
+                next_round_eligible=next_round_eligible,
+                feedback=feedback.get("overall_feedback", ""),
+                strengths=feedback.get("strengths", []),
+                weaknesses=feedback.get("weaknesses", []),
+                is_published=True,
+            )
+            db.add(sp_result)
+            await db.commit()
+    except Exception as _e:
+        pass
+    # -- END AUTO-PUBLISH ----------------------------------------------------
     return {
         "success": True,
         "score": attempt.total_score,
@@ -489,3 +535,4 @@ async def terminate_attempt(
     attempt.submitted_at = datetime.utcnow()
     await db.commit()
     return {"status": "terminated"}
+

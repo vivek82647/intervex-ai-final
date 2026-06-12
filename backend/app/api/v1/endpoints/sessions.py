@@ -325,6 +325,32 @@ async def get_live_status(
     }
 
 
+
+@router.patch("/{session_id}/edit")
+async def edit_session(
+    session_id: str,
+    data: dict,
+    current_user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Edit session details — title, description, duration, passing_marks (anytime)"""
+    result = await db.execute(
+        select(DBSession).where(
+            DBSession.id == session_id,
+            DBSession.admin_id == current_user["user_id"]
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    allowed_fields = ["title", "description", "instructions", "duration_minutes", "passing_marks", "max_warnings"]
+    for field in allowed_fields:
+        if field in data and data[field] is not None:
+            setattr(session, field, data[field])
+
+    await db.commit()
+    return {"success": True, "message": "Session updated"}
 @router.delete("/{session_id}")
 async def delete_session(
     session_id: str,
