@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  FileText, Plus, X, ChevronDown, ChevronUp, RefreshCw, Download, MessageSquare,
+  FileText, Plus, X, ChevronDown, ChevronUp, RefreshCw, Download, MessageSquare, Bot,
 } from "lucide-react";
 import { portalAPI } from "@/lib/portalAPI";
 
@@ -20,6 +20,7 @@ interface Submission {
   student_email: string;
   submitted_at: string;
   grade_feedback?: string;
+  ai_feedback?: string;
   file_data?: string;
   file_type?: string;
   file_name?: string;
@@ -38,6 +39,7 @@ export default function AssignmentsPage() {
   const [loadingSubs, setLoadingSubs] = useState<string | null>(null);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
   const [savingFeedback, setSavingFeedback] = useState<string | null>(null);
+  const [expandedAI, setExpandedAI] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const fetchAssignments = async () => {
@@ -89,7 +91,6 @@ export default function AssignmentsPage() {
     if (!feedback?.trim()) return;
     try {
       setSavingFeedback(submissionId);
-      // POST feedback via a direct fetch since giveFeedback isn't in portalAPI
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       await fetch(`https://intervex-ai-final.onrender.com/api/sp/assignments/submissions/${submissionId}/feedback`, {
         method: "POST",
@@ -197,6 +198,7 @@ export default function AssignmentsPage() {
                     <div className="divide-y">
                       {(submissions[a.id] ?? []).map((sub: Submission) => (
                         <div key={sub.id} className="p-5 space-y-3">
+                          {/* Student info + download */}
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <p className="font-medium text-sm">{sub.student_name}</p>
@@ -209,12 +211,47 @@ export default function AssignmentsPage() {
                               </button>
                             )}
                           </div>
+
+                          {/* ── AI Feedback Section ── */}
+                          {sub.ai_feedback ? (
+                            <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 overflow-hidden">
+                              <button
+                                onClick={() => setExpandedAI(expandedAI === sub.id ? null : sub.id)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-purple-500/10 transition-colors"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Bot className="w-3.5 h-3.5 text-purple-400" />
+                                  <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">AI Feedback</span>
+                                  <span className="text-xs text-muted-foreground">(auto-generated)</span>
+                                </div>
+                                {expandedAI === sub.id
+                                  ? <ChevronUp className="w-3.5 h-3.5 text-purple-400" />
+                                  : <ChevronDown className="w-3.5 h-3.5 text-purple-400" />}
+                              </button>
+                              {expandedAI === sub.id && (
+                                <div className="px-4 pb-4 pt-1 border-t border-purple-500/15">
+                                  <pre className="text-sm text-foreground whitespace-pre-wrap font-sans leading-relaxed">
+                                    {sub.ai_feedback}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-dashed">
+                              <Bot className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">No AI feedback — submitted before Gemini was enabled.</span>
+                            </div>
+                          )}
+
+                          {/* Existing feedback */}
                           {sub.grade_feedback && (
                             <div className="p-3 rounded-lg bg-primary/5 border border-primary/10">
                               <p className="text-xs font-medium text-primary mb-1">Your Feedback</p>
                               <p className="text-sm">{sub.grade_feedback}</p>
                             </div>
                           )}
+
+                          {/* Write feedback */}
                           <div className="flex gap-2">
                             <input type="text" value={feedbackMap[sub.id] ?? ""} onChange={(e) => setFeedbackMap((prev) => ({ ...prev, [sub.id]: e.target.value }))}
                               placeholder={sub.grade_feedback ? "Update feedback..." : "Write feedback..."}
