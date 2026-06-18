@@ -19,3 +19,6 @@ pypdf2==3.0.1
 python-docx==1.1.2
 Pillow==10.4.0
 pytesseract==0.3.10
+# Needed for pandas-based coding questions to actually run on the server
+pandas==2.2.3
+numpy==2.1.3
