@@ -191,8 +191,14 @@ JSON format:
         self, question: str, correct_answer: str,
         student_answer: str, rubric: Optional[Dict], max_marks: float
     ) -> Dict:
-        system = "You are a strict but fair exam evaluator. Return ONLY valid JSON, no extra text."
-        prompt = f"""Evaluate this student answer:
+        system = (
+            "You are a lenient but fair exam evaluator for students. "
+            "Always give partial marks generously — if the student shows any understanding, "
+            "logical thinking, or relevant knowledge, reward them. "
+            "Never give 0 unless the answer is completely blank or totally irrelevant. "
+            "Return ONLY valid JSON, no extra text."
+        )
+        prompt = f"""Evaluate this student answer with GENEROUS partial marking:
 
 QUESTION: {question}
 MODEL ANSWER: {correct_answer}
@@ -200,13 +206,20 @@ STUDENT ANSWER: {student_answer}
 MAX MARKS: {max_marks}
 RUBRIC: {json.dumps(rubric) if rubric else 'General accuracy and completeness'}
 
-Return ONLY this JSON:
+SCORING GUIDELINES (be lenient):
+- Student shows correct concept but incomplete: give 60-75% marks
+- Student shows partial understanding or logical attempt: give 40-60% marks  
+- Student has some relevant points even if not fully correct: give 25-40% marks
+- Answer is mostly wrong but shows minimal effort/understanding: give 10-25% marks
+- Completely blank or totally irrelevant answer only: give 0
+
+Return ONLY this JSON (score must be a decimal number, not a string):
 {{
   "score": <number between 0 and {max_marks}>,
   "percentage": <number between 0 and 100>,
-  "feedback": "Detailed constructive feedback",
-  "strengths": ["strength 1", "strength 2"],
-  "improvements": ["improvement 1", "improvement 2"],
+  "feedback": "Encouraging and constructive feedback mentioning what was good and what to improve",
+  "strengths": ["what student did well 1", "what student did well 2"],
+  "improvements": ["specific thing to improve 1", "specific thing to improve 2"],
   "rubric_scores": {{}}
 }}"""
         try:
@@ -229,7 +242,7 @@ Return ONLY this JSON:
         score: float, max_score: float,
         topic_scores: Dict[str, float], question_answers: List[Dict]
     ) -> Dict:
-        system = "You are an academic advisor. Return ONLY valid JSON, no extra text."
+        system = "You are an encouraging academic advisor who motivates students. Always highlight positives before suggesting improvements. Return ONLY valid JSON, no extra text."
         pct = (score / max_score * 100) if max_score > 0 else 0
         prompt = f"""Give performance feedback for:
 Student: {student_name}
@@ -239,12 +252,17 @@ Topic scores: {json.dumps(topic_scores)}
 
 Return ONLY this JSON:
 {{
-  "overall_feedback": "2-3 sentences about overall performance",
-  "strengths": ["strength 1", "strength 2"],
-  "weaknesses": ["weakness 1"],
-  "recommendations": ["recommendation 1", "recommendation 2"],
-  "performance_level": "Excellent",
-  "next_steps": "What to focus on next"
+  "overall_feedback": "2-3 encouraging sentences about overall performance, mention the score positively",
+  "strengths": ["specific strength 1", "specific strength 2"],
+  "weaknesses": ["specific area to improve 1"],
+  "recommendations": ["actionable recommendation 1", "actionable recommendation 2"],
+  "performance_level": "{
+    'Excellent' if pct >= 80 else
+    'Good' if pct >= 60 else
+    'Average' if pct >= 40 else
+    'Needs Improvement'
+  }",
+  "next_steps": "Specific and motivating advice on what to focus on next"
 }}"""
         try:
             result = (await self.generate(prompt, system)).strip()

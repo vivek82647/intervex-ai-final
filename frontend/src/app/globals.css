@@ -273,3 +273,15 @@
 :root[data-theme="light"] .border-white\/5    { border-color: rgba(91,106,245,0.08) !important; }
 :root[data-theme="light"] .border-white\/10   { border-color: rgba(91,106,245,0.12) !important; }
 :root[data-theme="light"] .border-white\/20   { border-color: rgba(91,106,245,0.18) !important; }
+
+/* ── Light mode: dark bg buttons should keep white text ─── */
+:root[data-theme="light"] .bg-gray-800.text-white,
+:root[data-theme="light"] .bg-gray-900.text-white,
+:root[data-theme="light"] .bg-blue-600.text-white,
+:root[data-theme="light"] .bg-blue-700.text-white,
+:root[data-theme="light"] .bg-green-600.text-white,
+:root[data-theme="light"] .bg-green-700.text-white,
+:root[data-theme="light"] .bg-red-600.text-white,
+:root[data-theme="light"] .bg-gray-400.text-white {
+  color: #ffffff !important;
+}
