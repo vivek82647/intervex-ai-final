@@ -282,6 +282,67 @@ Return ONLY this JSON:
 
 
 
+    async def evaluate_coding(
+        self, question: str, correct_answer: str,
+        student_code: str, test_cases: Optional[List[Dict]], max_marks: float,
+        language: str = "python"
+    ) -> Dict:
+        system = (
+            "You are a lenient and experienced programming instructor evaluating student code. "
+            "Focus on the LOGIC and APPROACH, not just syntax perfection. "
+            "Reward partial understanding generously. "
+            "Return ONLY valid JSON, no extra text."
+        )
+        prompt = f"""Evaluate this student's coding solution with LOGIC-FIRST partial marking:
+
+QUESTION: {question}
+LANGUAGE: {language}
+MODEL SOLUTION (for reference): {correct_answer}
+STUDENT CODE:
+{student_code}
+TEST CASES: {json.dumps(test_cases) if test_cases else 'Not provided'}
+MAX MARKS: {max_marks}
+
+SCORING GUIDELINES (prioritize logic over syntax):
+- Correct logic + correct syntax (passes test cases): give 90-100% marks
+- Correct logic + minor syntax errors (small typos, missing colon, wrong indentation): give 70-85% marks
+- Correct approach/algorithm but implementation incomplete or has bugs: give 50-70% marks
+- Partially correct logic, shows understanding of the problem: give 30-50% marks
+- Wrong logic but relevant code attempt (used right functions/concepts): give 15-30% marks
+- Completely blank or totally unrelated code only: give 0
+
+IMPORTANT: If student wrote df.groupby(...).mean() or similar correct pandas/library usage 
+but with small syntax issues, that is "correct logic + minor syntax" — give 70-85%.
+
+Return ONLY this JSON:
+{{
+  "score": <number between 0 and {max_marks}>,
+  "percentage": <number between 0 and 100>,
+  "logic_score": <percentage 0-100 for logic correctness>,
+  "syntax_score": <percentage 0-100 for syntax correctness>,
+  "feedback": "Encouraging feedback — mention what logic was correct, what syntax to fix",
+  "strengths": ["specific coding strength 1", "specific coding strength 2"],
+  "improvements": ["specific syntax/logic fix 1", "specific fix 2"],
+  "test_cases_passed": <estimated number based on code review>,
+  "approach_correct": <true or false>
+}}"""
+        try:
+            result = (await self.generate(prompt, system)).strip()
+            if result.startswith("```"):
+                result = re.sub(r"```(?:json)?", "", result).strip().rstrip("`").strip()
+            start = result.find("{")
+            end = result.rfind("}") + 1
+            return json.loads(result[start:end])
+        except Exception as e:
+            logger.error(f"Coding evaluation failed: {e}")
+            return {
+                "score": 0, "percentage": 0,
+                "logic_score": 0, "syntax_score": 0,
+                "feedback": "Evaluation failed. Please retry.",
+                "strengths": [], "improvements": [],
+                "test_cases_passed": 0, "approach_correct": False
+            }
+
     async def chat(self, messages: list, system: str = "") -> str:
         """Multi-turn chat with message history"""
         if not settings.GROQ_API_KEY:
