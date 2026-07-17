@@ -255,24 +255,38 @@
 }
 
 /* ── Light mode: text-white overrides ───────────────────── */
+/* Every text-white/N opacity actually used in the app is listed here so none
+   are left as literal white-on-light text (previously /15, /25, /85 were
+   missing, making some labels unreadable in light mode). */
 :root[data-theme="light"] .text-white         { color: var(--text-primary) !important; }
+:root[data-theme="light"] .text-white\/85     { color: rgba(30,41,59,0.85) !important; }
 :root[data-theme="light"] .text-white\/80     { color: rgba(30,41,59,0.80) !important; }
 :root[data-theme="light"] .text-white\/70     { color: rgba(30,41,59,0.70) !important; }
 :root[data-theme="light"] .text-white\/60     { color: rgba(30,41,59,0.60) !important; }
 :root[data-theme="light"] .text-white\/50     { color: rgba(30,41,59,0.50) !important; }
 :root[data-theme="light"] .text-white\/40     { color: rgba(30,41,59,0.40) !important; }
 :root[data-theme="light"] .text-white\/30     { color: rgba(30,41,59,0.30) !important; }
+:root[data-theme="light"] .text-white\/25     { color: rgba(30,41,59,0.25) !important; }
 :root[data-theme="light"] .text-white\/20     { color: rgba(30,41,59,0.20) !important; }
+:root[data-theme="light"] .text-white\/15     { color: rgba(30,41,59,0.15) !important; }
 :root[data-theme="light"] .text-white\/10     { color: rgba(30,41,59,0.10) !important; }
 
 /* ── Light mode: bg-white/opacity overrides ─────────────── */
+:root[data-theme="light"] .bg-white\/2        { background-color: rgba(91,106,245,0.02) !important; }
+:root[data-theme="light"] .bg-white\/3        { background-color: rgba(91,106,245,0.03) !important; }
 :root[data-theme="light"] .bg-white\/5        { background-color: rgba(91,106,245,0.05) !important; }
 :root[data-theme="light"] .bg-white\/10       { background-color: rgba(91,106,245,0.08) !important; }
+:root[data-theme="light"] .bg-white\/20       { background-color: rgba(91,106,245,0.14) !important; }
+:root[data-theme="light"] .bg-white\/30       { background-color: rgba(91,106,245,0.20) !important; }
 
 /* ── Light mode: border-white/opacity overrides ─────────── */
 :root[data-theme="light"] .border-white\/5    { border-color: rgba(91,106,245,0.08) !important; }
+:root[data-theme="light"] .border-white\/8    { border-color: rgba(91,106,245,0.10) !important; }
 :root[data-theme="light"] .border-white\/10   { border-color: rgba(91,106,245,0.12) !important; }
+:root[data-theme="light"] .border-white\/15   { border-color: rgba(91,106,245,0.15) !important; }
 :root[data-theme="light"] .border-white\/20   { border-color: rgba(91,106,245,0.18) !important; }
+:root[data-theme="light"] .border-white\/30   { border-color: rgba(91,106,245,0.25) !important; }
+:root[data-theme="light"] .border-white\/40   { border-color: rgba(91,106,245,0.32) !important; }
 
 /* ── Light mode: dark bg buttons should keep white text ─── */
 :root[data-theme="light"] .bg-gray-800.text-white,
